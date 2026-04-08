@@ -2,40 +2,43 @@
 
 # SIC — Security Intelligence Center
 
-### AI-Powered MCP Cybersecurity Automation Platform
+### Private Offensive Security + Admin Operations Platform
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Security](https://img.shields.io/badge/Security-Penetration%20Testing-red.svg)](https://github.com/DevCraftXCoder/sic)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://github.com/DevCraftXCoder/sic)
-[![Version](https://img.shields.io/badge/Version-6.0.0-orange.svg)](https://github.com/DevCraftXCoder/sic)
-[![Tools](https://img.shields.io/badge/Security%20Tools-150%2B-brightgreen.svg)](https://github.com/DevCraftXCoder/sic)
-[![Agents](https://img.shields.io/badge/AI%20Agents-12%2B-purple.svg)](https://github.com/DevCraftXCoder/sic)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](#ai-client-integration)
+[![Version](https://img.shields.io/badge/Version-6.0.0-orange.svg)](#)
+[![Tools](https://img.shields.io/badge/Security%20Tools-150%2B-brightgreen.svg)](#security-tools-arsenal)
+[![Agents](https://img.shields.io/badge/AI%20Agents-12%2B-purple.svg)](#ai-agents)
 
-**Offensive security automation framework — 150+ tools, 12+ autonomous agents, full MCP integration. Built for red teams, bug bounty hunters, CTF players, and security researchers.**
+**Two systems in one repo: an AI-powered pentesting MCP framework (150+ tools, 12+ agents) and a full admin operations dashboard for platform monitoring, user management, infrastructure control, and observability.**
 
-[Architecture](#architecture-overview) | [Installation](#installation) | [Features](#features) | [AI Agents](#ai-agents) | [Admin Panel](#admin-panel-integration) | [API Reference](#api-reference)
+[SIC Engine](#sic-engine) | [Admin System Tab](#admin-system-tab) | [Installation](#installation) | [API Reference](#api-reference)
 
 </div>
 
 ---
 
-## Architecture Overview
+## Overview
 
-SIC v6.0 features a multi-agent architecture with autonomous AI agents, intelligent decision-making, and vulnerability intelligence.
+SIC is split into two layers:
+
+| Layer | What It Does | Stack |
+|-------|-------------|-------|
+| **SIC Engine** | Offensive security automation — scans, exploits, recon, CTF solving, CVE intelligence | Python + Flask + MCP |
+| **Admin System Tab** | Platform operations dashboard — health monitoring, user management, error logs, infra controls, observability | Next.js 15 + React (admin panel) |
+
+The SIC Engine runs as a local server. The Admin System Tab is a section of the MizzyTools admin dashboard that ties into the engine and also manages all platform infrastructure independently.
+
+---
+
+## SIC Engine
+
+AI-powered penetration testing framework with MCP protocol support. Connects to Claude, GPT, Copilot, Cursor, or any MCP-compatible AI client.
+
+### Architecture
 
 ```mermaid
-%%{init: {"themeVariables": {
-  "primaryColor": "#b71c1c",
-  "secondaryColor": "#ff5252",
-  "tertiaryColor": "#ff8a80",
-  "background": "#2d0000",
-  "edgeLabelBackground":"#b71c1c",
-  "fontFamily": "monospace",
-  "fontSize": "16px",
-  "fontColor": "#fffde7",
-  "nodeTextColor": "#fffde7"
-}}}%%
 graph TD
     A[AI Agent - Claude/GPT/Copilot] -->|MCP Protocol| B[SIC MCP Server v6.0]
 
@@ -52,229 +55,23 @@ graph TD
     D --> K[CVE Intelligence Agent]
     D --> L[Exploit Generator Agent]
 
-    E --> M[Real-time Dashboards]
-    E --> N[Progress Visualization]
-    E --> O[Vulnerability Cards]
-
     B --> P[150+ Security Tools]
-    P --> Q[Network Tools - 25+]
-    P --> R[Web App Tools - 40+]
-    P --> S[Cloud Tools - 20+]
-    P --> T[Binary Tools - 25+]
-    P --> U[CTF Tools - 20+]
-    P --> V[OSINT Tools - 20+]
-
-    B --> W[Advanced Process Management]
-    W --> X[Smart Caching]
-    W --> Y[Resource Optimization]
-    W --> Z[Error Recovery]
-
-    style A fill:#b71c1c,stroke:#ff5252,stroke-width:3px,color:#fffde7
-    style B fill:#ff5252,stroke:#b71c1c,stroke-width:4px,color:#fffde7
-    style C fill:#ff8a80,stroke:#b71c1c,stroke-width:2px,color:#fffde7
-    style D fill:#ff8a80,stroke:#b71c1c,stroke-width:2px,color:#fffde7
-    style E fill:#ff8a80,stroke:#b71c1c,stroke-width:2px,color:#fffde7
+    P --> Q[Network - 25+]
+    P --> R[Web App - 40+]
+    P --> S[Cloud - 20+]
+    P --> T[Binary - 25+]
+    P --> U[CTF - 20+]
+    P --> V[OSINT - 20+]
 ```
 
 ### How It Works
 
-1. **AI client** (Claude, GPT, Copilot) sends commands via MCP protocol
-2. **Decision engine** selects optimal tools and parameters
-3. **Security tools** execute scans, exploits, and analysis
-4. **Results** are formatted and returned through MCP with visual output
-
----
-
-## Installation
-
-### Quick Setup
-
-```bash
-git clone https://github.com/DevCraftXCoder/sic.git
-cd sic
-pip install -r requirements.txt
-```
-
-### Supported AI Clients
-
-| Client | Status | Integration |
-|--------|--------|-------------|
-| Claude Desktop | Full support | MCP config |
-| Cursor | Full support | MCP config |
-| VS Code Copilot | Full support | Extension settings |
-| Windsurf | Full support | MCP config |
-| Any MCP client | Full support | Standard MCP |
-
-### Install Security Tools
-
-SIC automatically manages tool installation. On first run it checks for and installs required tools:
-
-- **Network**: nmap, masscan, rustscan, netcat, tcpdump
-- **Web**: nikto, sqlmap, wfuzz, gobuster, dirb, feroxbuster, httpx
-- **Recon**: subfinder, amass, assetfinder, waybackurls, gau
-- **Exploit**: metasploit, searchsploit, hydra, john, hashcat
-- **Cloud**: awscli, gcloud, az-cli, terraform, scout-suite
-- **Binary**: gdb, radare2, ghidra, binwalk, checksec
-- **OSINT**: theHarvester, shodan, maltego, spiderfoot, recon-ng
-
-### Start the Server
-
-```bash
-# Standard start
-python sic_launcher.py
-
-# With debug logging
-python sic_launcher.py --debug
-
-# Custom port
-python sic_launcher.py --port 5001
-```
-
-Default: `http://127.0.0.1:5000`
-
-### Verify Installation
-
-```bash
-curl http://127.0.0.1:5000/health
-```
-
-Returns tool status, category stats, uptime, and telemetry.
-
----
-
-## AI Client Integration
-
-### Claude Desktop / Cursor
-
-Add to your MCP config (`claude_desktop_config.json` or `.cursor/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "sic": {
-      "command": "python",
-      "args": ["/path/to/sic/sic_mcp.py"],
-      "env": {}
-    }
-  }
-}
-```
-
-### VS Code Copilot
-
-Add to your VS Code MCP settings:
-
-```json
-{
-  "mcp.servers": {
-    "sic": {
-      "command": "python",
-      "args": ["/path/to/sic/sic_mcp.py"]
-    }
-  }
-}
-```
-
----
-
-## Features
-
-### Security Tools Arsenal
-
-<details>
-<summary><strong>Network Security (25+ tools)</strong></summary>
-
-| Tool | Purpose |
-|------|---------|
-| nmap | Port scanning, service detection, OS fingerprinting |
-| masscan | High-speed port scanning |
-| rustscan | Fast port scanner with nmap integration |
-| netcat | Network utility for reading/writing connections |
-| tcpdump | Packet capture and analysis |
-| wireshark-cli | Deep packet inspection |
-| arp-scan | Layer 2 network discovery |
-| ping sweep | Host discovery |
-| traceroute | Network path analysis |
-| DNS tools | Zone transfer, subdomain enumeration |
-
-</details>
-
-<details>
-<summary><strong>Web Application Security (40+ tools)</strong></summary>
-
-| Tool | Purpose |
-|------|---------|
-| sqlmap | Automated SQL injection |
-| nikto | Web server scanner |
-| wfuzz | Web fuzzer |
-| gobuster | Directory/file brute-forcing |
-| feroxbuster | Fast content discovery |
-| httpx | HTTP probing and analysis |
-| nuclei | Template-based vulnerability scanner |
-| XSS detection | Cross-site scripting analysis |
-| SSRF scanner | Server-side request forgery detection |
-| CORS checker | Cross-origin misconfiguration detection |
-
-</details>
-
-<details>
-<summary><strong>Cloud Security (20+ tools)</strong></summary>
-
-| Tool | Purpose |
-|------|---------|
-| ScoutSuite | Multi-cloud auditing |
-| Prowler | AWS security assessment |
-| CloudSploit | Cloud misconfiguration detection |
-| S3 scanner | Bucket permission analysis |
-| IAM analyzer | Identity and access review |
-| Container security | Docker/K8s vulnerability scanning |
-
-</details>
-
-<details>
-<summary><strong>Binary Analysis (25+ tools)</strong></summary>
-
-| Tool | Purpose |
-|------|---------|
-| GDB | Runtime debugging |
-| Radare2 | Reverse engineering framework |
-| Ghidra | NSA decompiler |
-| Binwalk | Firmware analysis |
-| checksec | Binary protection checker |
-| ROPgadget | Return-oriented programming |
-| pwntools | CTF/exploit development |
-
-</details>
-
-<details>
-<summary><strong>CTF Tools (20+ tools)</strong></summary>
-
-| Tool | Purpose |
-|------|---------|
-| CyberChef | Data transformation |
-| John the Ripper | Password cracking |
-| Hashcat | GPU-accelerated hash cracking |
-| Stegsolve | Steganography analysis |
-| Forensics toolkit | Memory/disk forensics |
-
-</details>
-
-<details>
-<summary><strong>OSINT (20+ tools)</strong></summary>
-
-| Tool | Purpose |
-|------|---------|
-| theHarvester | Email/domain recon |
-| Shodan | Internet-connected device search |
-| SpiderFoot | Automated OSINT collection |
-| Recon-ng | Web reconnaissance framework |
-| Maltego | Link analysis and data mining |
-
-</details>
+1. AI client sends commands via MCP protocol
+2. Decision engine selects optimal tools and parameters
+3. Security tools execute scans, exploits, and analysis
+4. Results formatted and returned through MCP with visual output
 
 ### AI Agents
-
-SIC ships with 12+ autonomous AI agents:
 
 | Agent | Capability |
 |-------|-----------|
@@ -291,10 +88,48 @@ SIC ships with 12+ autonomous AI agents:
 | **Social Engineering Agent** | Phishing simulation and awareness |
 | **Report Generator Agent** | Automated pentest report creation |
 
-### Advanced Features
+### Security Tools Arsenal
+
+<details>
+<summary><strong>Network Security (25+ tools)</strong></summary>
+
+nmap, masscan, rustscan, netcat, tcpdump, wireshark-cli, arp-scan, ping sweep, traceroute, DNS zone transfer, subdomain enumeration, and more.
+</details>
+
+<details>
+<summary><strong>Web Application Security (40+ tools)</strong></summary>
+
+sqlmap, nikto, wfuzz, gobuster, feroxbuster, httpx, nuclei, XSS detection, SSRF scanner, CORS checker, directory brute-forcing, and more.
+</details>
+
+<details>
+<summary><strong>Cloud Security (20+ tools)</strong></summary>
+
+ScoutSuite, Prowler, CloudSploit, S3 bucket scanner, IAM analyzer, container security scanning, and more.
+</details>
+
+<details>
+<summary><strong>Binary Analysis (25+ tools)</strong></summary>
+
+GDB, Radare2, Ghidra, Binwalk, checksec, ROPgadget, pwntools, and more.
+</details>
+
+<details>
+<summary><strong>CTF Tools (20+ tools)</strong></summary>
+
+CyberChef, John the Ripper, Hashcat, Stegsolve, memory/disk forensics toolkit, and more.
+</details>
+
+<details>
+<summary><strong>OSINT (20+ tools)</strong></summary>
+
+theHarvester, Shodan, SpiderFoot, Recon-ng, Maltego, and more.
+</details>
+
+### Advanced Capabilities
 
 - **Intelligent Decision Engine** — AI-driven tool selection based on target context
-- **Parameter Optimization** — Automatic tuning for each tool/target combination
+- **Parameter Optimization** — Automatic tuning per tool/target combination
 - **Attack Chain Discovery** — Links vulnerabilities into exploitable chains
 - **Smart Caching** — Avoids redundant scans, caches intermediate results
 - **Resource Management** — CPU/memory-aware scheduling
@@ -302,53 +137,124 @@ SIC ships with 12+ autonomous AI agents:
 
 ---
 
-## Admin Panel Integration
+## Admin System Tab
 
-SIC integrates into the **MizzyTools** admin dashboard as the System tab's security intelligence layer.
+The System tab is the operations center inside the MizzyTools admin dashboard. Eight collapsible sections, each lazy-loaded for performance. All data auto-refreshes on 30-60s intervals.
 
-### System Tab Overview
+### Section Map
 
-The System tab (`SystemAdminTab.tsx`) provides 8 operational sections:
+| # | Section | Component | What It Shows |
+|---|---------|-----------|---------------|
+| 1 | **Overview** | `SystemOverviewCards` | 8 stat cards — total users, active users (30d), total tracks, published tracks, total posts, total comments, platform revenue MTD, Underground+ subscribers. Auto-refreshes every 60s. |
+| 2 | **Observability** | `ObservabilityPanel` | Prometheus metrics (SSO req/s, p95 latency, auth failures/s, WS connections, host CPU %, host memory %, container restarts/1h) + Kafka consumer lag table with per-group/topic breakdown and HIGH LAG warnings. |
+| 3 | **User Management** | `UserManagementTable` | Full user table — display name, handle, avatar, subscription tier (Free/Basic/Pro/Underground+), verified badge, ban status, soft-delete status, join date. Actions: ban, verify, delete. Search + filter. |
+| 4 | **Content Moderation** | `ContentReportsPanel` | Report queue with target type (track/post/profile/comment), reporter info, reason, AI auto-research results, status (pending/under_review/resolved/dismissed). Actions: dismiss, warn, remove content, escalate. |
+| 5 | **Service Health** | `ServiceHealthGrid` | Live health status for 6 services — Underground API, SSO, Stats Server, Email Saver, Cobalt API, Memory MCP. Status dots (healthy/degraded/down/unknown), latency in ms, relative last-check time. 7-day uptime percentages with progress bars. |
+| 6 | **Error Logs** | `ErrorLogTable` | D1 error log viewer with filters — time range (1h/24h/7d/30d), status code (4xx/5xx), HTTP method, path search. Color-coded methods and status codes, expandable rows, aggregate strip (total/4xx/5xx counts). |
+| 7 | **Announcements** | `AnnouncementsManager` | CRUD for platform announcements — types (info/warning/maintenance/release), active toggle, dismissible flag, optional expiration, dismiss count tracking. Create, edit, delete. |
+| 8 | **Infrastructure** | `InfrastructurePanel` | Deploy status (Vercel + GitHub Actions), environment audit (env var presence check per feature, SET/MISSING indicators), process controls (restart stats-server, docker cleanup with confirmation + reason), SSO stats (registered clients, active tokens, auth attempts/failures/rate limit hits in 24h). |
 
-| Section | Component | Purpose |
-|---------|-----------|---------|
-| **Overview** | `SystemOverviewCards` | Platform-wide stats at a glance |
-| **Observability** | `ObservabilityPanel` | Metrics, traces, logs |
-| **Users** | `UserManagementTable` | User admin (ban, verify, delete) |
-| **Moderation** | `ContentReportsPanel` | Content reports with AI auto-research |
-| **Health** | `ServiceHealthGrid` | Service status across all endpoints |
-| **Errors** | `ErrorLogTable` | D1 error log viewer (30-day TTL) |
-| **Announcements** | `AnnouncementsManager` | Admin-created platform announcements |
-| **Infrastructure** | `InfrastructurePanel` | Docker, PM2, tunnel status |
+### SIC Panel (Security Layer)
 
-### SIC Panel
+The `SICPanel` component connects to the SIC engine via `/api/admin/systems/sic` proxy and adds:
 
-The `SICPanel` component connects to the SIC server via `/api/admin/systems/sic` proxy and displays:
-
-- **Server Health** — version, uptime, total tools available vs total
-- **Tool Status** — per-tool availability (green/red indicators)
+- **Server Health** — version, uptime, total tools available vs total count
+- **Tool Status** — per-tool availability with green/red indicators
 - **Category Stats** — tools available per category (network, web, cloud, binary, CTF, OSINT)
 - **Telemetry** — commands executed, success rate, average execution time
 - **System Metrics** — CPU %, memory %, disk usage
-- **Smart Scan** — run targeted scans directly from the admin panel (network, web, full, recon, vuln)
+- **Smart Scan** — trigger targeted scans (network, web, full, recon, vuln) directly from the admin panel with real-time results
 
-### Running with Admin Panel
+When the SIC server is offline, the panel shows a banner with the startup command: `pm2 start sic-server`.
+
+### Design System
+
+All admin panels follow the same visual language:
+
+| Token | Value |
+|-------|-------|
+| Background | `#0a0a0a` (page), `#111` (elevated panels), `#181818` (cards) |
+| Accent | `#e94560` (red) |
+| Success | `#22c55e` |
+| Warning | `#f59e0b` |
+| Info | `#3b82f6` |
+| Fonts | Syne (headings), DM Sans (body), JetBrains Mono (code/paths) |
+| Borders | `rgba(255,255,255,0.06)` default |
+
+### Data Sources
+
+| Panel | API Endpoint | Source |
+|-------|-------------|--------|
+| Overview | `/api/admin/underground-stats`, `/api/admin/underground-stats-rich` | Underground API (D1) |
+| Observability | `/api/admin/prometheus`, `/api/admin/kafka-lag` | Prometheus, Kafka UI |
+| Users | `/api/admin/underground-users` | Underground API (D1) |
+| Moderation | `/api/admin/underground-reports` | Underground API (D1) |
+| Health | `/api/admin/underground-health`, `/api/admin/sso-health`, `/api/admin/underground-uptime` | Direct health checks + D1 uptime_checks |
+| Errors | `/api/admin/underground-errors` | Underground API (D1 error_logs, 30-day TTL) |
+| Announcements | `/api/admin/underground-announcements` | Underground API (D1) |
+| Infrastructure | `/api/admin/deploy-status`, `/api/admin/gh-deploy-status`, `/api/admin/env-check`, `/api/admin/sso-stats`, `/api/admin/restart-stats`, `/api/admin/docker-cleanup` | Vercel API, GitHub API, local PM2/Docker |
+| SIC | `/api/admin/systems/sic` | SIC Engine (Flask, port 5000) |
+
+---
+
+## Installation
+
+### SIC Engine
 
 ```bash
-# Start SIC server (Flask, port 5000)
+git clone https://github.com/DevCraftXCoder/sic.git
+cd sic
+pip install -r requirements.txt
 python sic_launcher.py
+```
 
-# Or register with PM2
+Default: `http://127.0.0.1:5000`
+
+```bash
+# Verify
+curl http://127.0.0.1:5000/health
+
+# Debug mode
+python sic_launcher.py --debug
+
+# Custom port
+python sic_launcher.py --port 5001
+
+# Register with PM2
 pm2 start sic_launcher.py --name sic-server --interpreter python
 ```
 
-The admin panel auto-detects SIC status and shows an offline banner with startup instructions if the server is unreachable.
+### AI Client Integration
+
+**Claude Desktop / Cursor:**
+```json
+{
+  "mcpServers": {
+    "sic": {
+      "command": "python",
+      "args": ["/path/to/sic/sic_mcp.py"]
+    }
+  }
+}
+```
+
+**VS Code Copilot:**
+```json
+{
+  "mcp.servers": {
+    "sic": {
+      "command": "python",
+      "args": ["/path/to/sic/sic_mcp.py"]
+    }
+  }
+}
+```
 
 ---
 
 ## API Reference
 
-### Core System Endpoints
+### SIC Engine Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -358,16 +264,19 @@ The admin panel auto-detects SIC status and shows an offline banner with startup
 | `/api/scan` | POST | Run a targeted scan |
 | `/api/agents` | GET | List AI agents |
 | `/api/agents/<name>/run` | POST | Execute an agent task |
+| `/api/processes` | GET | List running processes |
+| `/api/processes/<id>` | DELETE | Kill a process |
+| `/api/cache/clear` | POST | Clear scan cache |
 
 ### Common MCP Tools
 
 ```
-# Network scanning
+# Network
 sic_nmap_scan(target, flags)
 sic_masscan(target, ports)
 sic_port_scan(target)
 
-# Web scanning
+# Web
 sic_nikto_scan(target)
 sic_sqlmap(target, params)
 sic_directory_bruteforce(target, wordlist)
@@ -383,67 +292,6 @@ sic_cve_lookup(cve_id)
 sic_exploit_search(query)
 ```
 
-### Process Management
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/processes` | GET | List running processes |
-| `/api/processes/<id>` | DELETE | Kill a process |
-| `/api/cache/clear` | POST | Clear scan cache |
-
----
-
-## Usage Examples
-
-Ask your AI client:
-
-- "Scan example.com for open ports and common vulnerabilities"
-- "Run a full web application assessment on https://target.com"
-- "Check CVE-2024-XXXX for exploitability and available patches"
-- "Enumerate subdomains for target.com"
-- "Solve this CTF challenge: [paste challenge details]"
-- "Audit my AWS account for security misconfigurations"
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-**Server won't start:**
-```bash
-# Check port availability
-lsof -i :5000
-
-# Check Python dependencies
-pip install -r requirements.txt
-
-# Run with debug
-python sic_launcher.py --debug
-```
-
-**Tools not found:**
-```bash
-# SIC auto-installs tools, but you can manually check:
-which nmap sqlmap nikto gobuster
-
-# On Debian/Ubuntu:
-sudo apt install nmap nikto
-```
-
-**MCP connection issues:**
-- Verify MCP config paths are absolute
-- Check that the server is running (`curl http://127.0.0.1:5000/health`)
-- Review AI client logs for MCP handshake errors
-
-### Debug Mode
-
-```bash
-python sic_launcher.py --debug
-```
-
-Enables verbose logging for all tool executions, MCP messages, and agent decisions.
-
 ---
 
 ## Security & Responsible Use
@@ -451,36 +299,11 @@ Enables verbose logging for all tool executions, MCP messages, and agent decisio
 SIC is an **offensive security toolkit** for professionals. It generates real exploits, runs real scans, and can cause real damage if misused.
 
 - All tools run locally — no telemetry, no data exfiltration
-- API key auth protects the server from unauthorized access
-- Smart caching stores scan results locally — clear with `/api/cache/clear`
-- Exploit generation and CVE research are first-class features, not afterthoughts
+- API key auth protects the server
+- Smart caching stores results locally — clear with `/api/cache/clear`
+- Exploit generation and CVE research are first-class features
 
-### Who This Is For
-
-- Red teamers and pentesters with authorized engagements
-- Bug bounty hunters on in-scope targets
-- CTF competitors
-- Security researchers in lab environments
-- Friends and collaborators with proper context
-
-> This is a private tool shared among trusted peers. If you have access, you already know the rules: **test only what you're authorized to test.**
-
----
-
-## Contributing
-
-Contributions welcome. Open a PR or issue on GitHub.
-
-### Development Setup
-
-```bash
-git clone https://github.com/DevCraftXCoder/sic.git
-cd sic
-python -m venv sic-env
-source sic-env/bin/activate  # or sic-env\Scripts\activate on Windows
-pip install -r requirements.txt
-python sic_launcher.py --debug
-```
+This is a private tool shared among trusted peers. If you have access, you already know the rules: **test only what you're authorized to test.**
 
 ---
 
