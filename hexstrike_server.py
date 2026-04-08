@@ -53,17 +53,25 @@ import asyncio
 import aiohttp
 from urllib.parse import urljoin, urlparse, parse_qs
 from bs4 import BeautifulSoup
-import selenium
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
-import mitmproxy
-from mitmproxy import http as mitmhttp
-from mitmproxy.tools.dump import DumpMaster
-from mitmproxy.options import Options as MitmOptions
+try:
+    import selenium
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options as SeleniumOptions
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException, WebDriverException
+    HAS_SELENIUM = True
+except ImportError:
+    HAS_SELENIUM = False
+try:
+    import mitmproxy
+    from mitmproxy import http as mitmhttp
+    from mitmproxy.tools.dump import DumpMaster
+    from mitmproxy.options import Options as MitmOptions
+    HAS_MITMPROXY = True
+except ImportError:
+    HAS_MITMPROXY = False
 from scope_enforcer import ScopeEnforcer, get_enforcer, safe_request, ScopeViolationError
 from scan_alerts import send_scan_alert
 
@@ -13645,7 +13653,7 @@ class BrowserAgent:
     def setup_browser(self, headless: bool = True, proxy_port: int = None):
         """Setup Chrome browser with security testing options"""
         try:
-            chrome_options = Options()
+            chrome_options = SeleniumOptions()
 
             if headless:
                 chrome_options.add_argument('--headless')
