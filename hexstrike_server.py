@@ -64,6 +64,8 @@ import mitmproxy
 from mitmproxy import http as mitmhttp
 from mitmproxy.tools.dump import DumpMaster
 from mitmproxy.options import Options as MitmOptions
+from scope_enforcer import ScopeEnforcer, get_enforcer, safe_request, ScopeViolationError
+from scan_alerts import send_scan_alert
 
 # ============================================================================
 # LOGGING CONFIGURATION (MUST BE FIRST)
@@ -9133,6 +9135,17 @@ def health_check():
         "telemetry": telemetry.get_stats(),
         "uptime": time.time() - telemetry.stats["start_time"]
     })
+
+
+@app.route("/api/scope/status", methods=["GET"])
+def scope_status():
+    """Return current scope enforcer configuration and request count."""
+    try:
+        enforcer = get_enforcer()
+        return jsonify(enforcer.status())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/command", methods=["POST"])
 def generic_command():
