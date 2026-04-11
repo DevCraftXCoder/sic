@@ -13,9 +13,9 @@
 [![Tools](https://img.shields.io/badge/Security%20Tools-150%2B-brightgreen.svg)](#security-tools-arsenal)
 [![Agents](https://img.shields.io/badge/AI%20Agents-12%2B-purple.svg)](#ai-agents)
 
-**Two systems in one repo: an AI-powered pentesting MCP framework (150+ tools, 12+ agents) and a full admin operations dashboard for platform monitoring, user management, infrastructure control, and observability.**
+**An AI-powered pentesting MCP framework with 150+ security tools and 12+ autonomous agents for authorized security testing, CTF challenges, and defensive research.**
 
-[SIC Engine](#sic-engine) | [Admin System Tab](#admin-system-tab) | [Installation](#installation) | [API Reference](#api-reference)
+[SIC Engine](#sic-engine) | [Installation](#installation) | [API Reference](#api-reference)
 
 </div>
 
@@ -23,31 +23,24 @@
 
 ## Overview
 
-SIC is split into two layers:
-
-| Layer | What It Does | Stack |
-|-------|-------------|-------|
-| **SIC Engine** | Offensive security automation — scans, exploits, recon, CTF solving, CVE intelligence | Python + Flask + MCP |
-| **Admin System Tab** | Platform operations dashboard — health monitoring, user management, error logs, infra controls, observability | Next.js 15 + React (admin panel) |
-
-The SIC Engine runs as a local server. The Admin System Tab is a section of the MizzyTools admin dashboard that ties into the engine and also manages all platform infrastructure independently.
+SIC is an AI-powered penetration testing framework that runs as a local server, exposing a comprehensive API and MCP interface for integration with AI clients (Claude, GPT, Copilot, Cursor, etc.).
 
 ---
 
-## Sandbox Architecture
+## Architecture
 
-SIC runs 126 real offensive security tools (nmap, sqlmap, nuclei, hydra, etc.) — so it's fully sandboxed in a hardened Docker container. The admin dashboard never talks to the engine directly; everything goes through an authenticated API proxy.
+SIC runs 150+ real offensive security tools (nmap, sqlmap, nuclei, hydra, etc.) — fully sandboxed in a hardened Docker container with multiple security layers.
 
 ### How It Works
 
 ```
-Browser (Admin Dashboard)
+AI Client (Claude, GPT, Copilot, Cursor)
   │
-  ▼
-Next.js API Proxy (/api/admin/systems/sic)
-  │  ├─ CORS check (x-requested-with header)
-  │  ├─ IP allowlist (home network only)
-  │  └─ Session auth (admin_auth cookie + ADMIN_PASSWORD)
+  ▼ (MCP Protocol)
+SIC MCP Server
+  │  ├─ Intelligent decision engine
+  │  ├─ Tool selection & parameter optimization
+  │  └─ Attack chain discovery
   │
   ▼
 127.0.0.1:9888 (loopback only — never exposed)
@@ -56,7 +49,7 @@ Next.js API Proxy (/api/admin/systems/sic)
 Docker Container (sic-scanner)
   │  ├─ Scope enforcer (ALLOWED_TARGETS whitelist)
   │  ├─ Dry-run gate (on by default)
-  │  └─ Tool execution (126 tools)
+  │  └─ Tool execution (150+ tools)
   │
   ▼
 ./output/ (results only — source baked into image)
@@ -95,18 +88,6 @@ The Dockerfile uses 3 stages to keep the image lean and the build fast:
 
 Heavy packages (angr, autorecon, spiderfoot) are stubbed — the System Tab runs `which <tool>` to show availability, so stubs satisfy that without the OOM risk.
 
-### API Proxy (3-Layer Auth)
-
-The admin dashboard proxies all SIC requests through `Next.js → /api/admin/systems/sic`. Three checks must pass:
-
-1. **CORS** — `x-requested-with: XMLHttpRequest` header required
-2. **IP allowlist** — request must come from the home network (`isAllowedIP()`)
-3. **Session auth** — valid `admin_auth` cookie verified against `ADMIN_PASSWORD`
-
-GET requests timeout at 10s (health checks). POST requests timeout at 60s (scan operations).
-
-On cloud deployments (no `SIC_SERVER_URL` or `SIC_LOCAL_MODE` set), the proxy returns `503 — local_only: true` and the SICPanel shows a banner instead of attempting to reach localhost.
-
 ### Running It
 
 ```bash
@@ -116,9 +97,6 @@ docker compose up -d
 
 # Verify health
 curl http://127.0.0.1:9888/health
-
-# View in admin dashboard
-# Navigate to MizzyTools → System Tab → SIC Panel
 
 # Register with PM2 (optional)
 pm2 start "docker compose -f docker/sic-scanner/docker-compose.yml up" --name sic-scanner
@@ -228,66 +206,6 @@ theHarvester, Shodan, SpiderFoot, Recon-ng, Maltego, and more.
 - **Smart Caching** — Avoids redundant scans, caches intermediate results
 - **Resource Management** — CPU/memory-aware scheduling
 - **Error Recovery** — Automatic retry with fallback strategies
-
----
-
-## Admin System Tab
-
-The System tab is the operations center inside the MizzyTools admin dashboard. Eight collapsible sections, each lazy-loaded for performance. All data auto-refreshes on 30-60s intervals.
-
-### Section Map
-
-| # | Section | Component | What It Shows |
-|---|---------|-----------|---------------|
-| 1 | **Overview** | `SystemOverviewCards` | 8 stat cards — total users, active users (30d), total tracks, published tracks, total posts, total comments, platform revenue MTD, Underground+ subscribers. Auto-refreshes every 60s. |
-| 2 | **Observability** | `ObservabilityPanel` | Prometheus metrics (SSO req/s, p95 latency, auth failures/s, WS connections, host CPU %, host memory %, container restarts/1h) + Kafka consumer lag table with per-group/topic breakdown and HIGH LAG warnings. |
-| 3 | **User Management** | `UserManagementTable` | Full user table — display name, handle, avatar, subscription tier (Free/Basic/Pro/Underground+), verified badge, ban status, soft-delete status, join date. Actions: ban, verify, delete. Search + filter. |
-| 4 | **Content Moderation** | `ContentReportsPanel` | Report queue with target type (track/post/profile/comment), reporter info, reason, AI auto-research results, status (pending/under_review/resolved/dismissed). Actions: dismiss, warn, remove content, escalate. |
-| 5 | **Service Health** | `ServiceHealthGrid` | Live health status for 6 services — Underground API, SSO, Stats Server, Email Saver, Cobalt API, Memory MCP. Status dots (healthy/degraded/down/unknown), latency in ms, relative last-check time. 7-day uptime percentages with progress bars. |
-| 6 | **Error Logs** | `ErrorLogTable` | D1 error log viewer with filters — time range (1h/24h/7d/30d), status code (4xx/5xx), HTTP method, path search. Color-coded methods and status codes, expandable rows, aggregate strip (total/4xx/5xx counts). |
-| 7 | **Announcements** | `AnnouncementsManager` | CRUD for platform announcements — types (info/warning/maintenance/release), active toggle, dismissible flag, optional expiration, dismiss count tracking. Create, edit, delete. |
-| 8 | **Infrastructure** | `InfrastructurePanel` | Deploy status (Vercel + GitHub Actions), environment audit (env var presence check per feature, SET/MISSING indicators), process controls (restart stats-server, docker cleanup with confirmation + reason), SSO stats (registered clients, active tokens, auth attempts/failures/rate limit hits in 24h). |
-
-### SIC Panel (Security Layer)
-
-The `SICPanel` component connects to the SIC engine via `/api/admin/systems/sic` proxy and adds:
-
-- **Server Health** — version, uptime, total tools available vs total count
-- **Tool Status** — per-tool availability with green/red indicators
-- **Category Stats** — tools available per category (network, web, cloud, binary, CTF, OSINT)
-- **Telemetry** — commands executed, success rate, average execution time
-- **System Metrics** — CPU %, memory %, disk usage
-- **Smart Scan** — trigger targeted scans (network, web, full, recon, vuln) directly from the admin panel with real-time results
-
-When the SIC server is offline, the panel shows a banner with the startup command: `pm2 start sic-server`.
-
-### Design System
-
-All admin panels follow the same visual language:
-
-| Token | Value |
-|-------|-------|
-| Background | `#0a0a0a` (page), `#111` (elevated panels), `#181818` (cards) |
-| Accent | `#e94560` (red) |
-| Success | `#22c55e` |
-| Warning | `#f59e0b` |
-| Info | `#3b82f6` |
-| Fonts | Syne (headings), DM Sans (body), JetBrains Mono (code/paths) |
-| Borders | `rgba(255,255,255,0.06)` default |
-
-### Data Sources
-
-| Panel | API Endpoint | Source |
-|-------|-------------|--------|
-| Overview | `/api/admin/underground-stats`, `/api/admin/underground-stats-rich` | Underground API (D1) |
-| Observability | `/api/admin/prometheus`, `/api/admin/kafka-lag` | Prometheus, Kafka UI |
-| Users | `/api/admin/underground-users` | Underground API (D1) |
-| Moderation | `/api/admin/underground-reports` | Underground API (D1) |
-| Health | `/api/admin/underground-health`, `/api/admin/sso-health`, `/api/admin/underground-uptime` | Direct health checks + D1 uptime_checks |
-| Errors | `/api/admin/underground-errors` | Underground API (D1 error_logs, 30-day TTL) |
-| Announcements | `/api/admin/underground-announcements` | Underground API (D1) |
-| Infrastructure | `/api/admin/deploy-status`, `/api/admin/gh-deploy-status`, `/api/admin/env-check`, `/api/admin/sso-stats`, `/api/admin/restart-stats`, `/api/admin/docker-cleanup` | Vercel API, GitHub API, local PM2/Docker |
-| SIC | `/api/admin/systems/sic` | SIC Engine (Flask, port 5000) |
 
 ---
 
