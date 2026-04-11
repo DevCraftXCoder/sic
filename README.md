@@ -32,6 +32,98 @@ The SIC Engine runs as a local server. The Admin System Tab is a section of the 
 
 ---
 
+## Sandbox Architecture
+
+SIC runs 126 real offensive security tools (nmap, sqlmap, nuclei, hydra, etc.) — so it's fully sandboxed in a hardened Docker container. The admin dashboard never talks to the engine directly; everything goes through an authenticated API proxy.
+
+### How It Works
+
+```
+Browser (Admin Dashboard)
+  │
+  ▼
+Next.js API Proxy (/api/admin/systems/sic)
+  │  ├─ CORS check (x-requested-with header)
+  │  ├─ IP allowlist (home network only)
+  │  └─ Session auth (admin_auth cookie + ADMIN_PASSWORD)
+  │
+  ▼
+127.0.0.1:9888 (loopback only — never exposed)
+  │
+  ▼
+Docker Container (sic-scanner)
+  │  ├─ Scope enforcer (ALLOWED_TARGETS whitelist)
+  │  ├─ Dry-run gate (on by default)
+  │  └─ Tool execution (126 tools)
+  │
+  ▼
+./output/ (results only — source baked into image)
+```
+
+### Container Isolation
+
+The Docker container enforces 12 security controls:
+
+| Control | Setting | Purpose |
+|---------|---------|---------|
+| Port binding | `127.0.0.1:9888` | Never reachable from network |
+| User | `scanner` (uid 1001) | Non-root, no privilege escalation |
+| Capabilities | `cap_drop: ALL` | Zero Linux capabilities |
+| Privilege escalation | `no-new-privileges: true` | Blocks setuid/setgid |
+| CPU limit | 2 cores | Prevents self-DoS |
+| Memory limit | 2 GB | Bounded resource usage |
+| DNS | `127.0.0.1` only | Blocks external hostname resolution |
+| Network | `scanner-net` bridge (internal on Linux) | No cross-container routes |
+| Scanner mode | `SCANNER_MODE=sandbox` | Restricts target scope at app layer |
+| Allowed targets | `staging.frxncois.com,127.0.0.1:9003` | Whitelist-only scanning |
+| Request budget | `MAX_REQUESTS_PER_SCAN=500` | Prevents runaway scans |
+| Dry-run default | `DRY_RUN_DEFAULT=true` | Must explicitly opt into live scans |
+| Scan timeout | `300s` hard wall | Kills scans after 5 minutes |
+| Volume mounts | `./output` only | Source code baked into image, never mounted |
+
+### Multi-Stage Build
+
+The Dockerfile uses 3 stages to keep the image lean and the build fast:
+
+| Stage | Base | What It Builds |
+|-------|------|---------------|
+| `go-builder` | `golang:1.24-alpine` | 13 Go tools (ffuf, gobuster, nuclei, httpx, subfinder, katana, etc.) |
+| `py-builder` | `python:3.12-slim` | 30+ Python packages (sqlmap, dirsearch, theHarvester, pwntools, etc.) |
+| `runtime` | `python:3.12-slim` | Final image — all tools + HexStrike API server |
+
+Heavy packages (angr, autorecon, spiderfoot) are stubbed — the System Tab runs `which <tool>` to show availability, so stubs satisfy that without the OOM risk.
+
+### API Proxy (3-Layer Auth)
+
+The admin dashboard proxies all SIC requests through `Next.js → /api/admin/systems/sic`. Three checks must pass:
+
+1. **CORS** — `x-requested-with: XMLHttpRequest` header required
+2. **IP allowlist** — request must come from the home network (`isAllowedIP()`)
+3. **Session auth** — valid `admin_auth` cookie verified against `ADMIN_PASSWORD`
+
+GET requests timeout at 10s (health checks). POST requests timeout at 60s (scan operations).
+
+On cloud deployments (no `SIC_SERVER_URL` or `SIC_LOCAL_MODE` set), the proxy returns `503 — local_only: true` and the SICPanel shows a banner instead of attempting to reach localhost.
+
+### Running It
+
+```bash
+# Start the sandboxed container
+cd docker/sic-scanner
+docker compose up -d
+
+# Verify health
+curl http://127.0.0.1:9888/health
+
+# View in admin dashboard
+# Navigate to MizzyTools → System Tab → SIC Panel
+
+# Register with PM2 (optional)
+pm2 start "docker compose -f docker/sic-scanner/docker-compose.yml up" --name sic-scanner
+```
+
+---
+
 ## SIC Engine
 
 AI-powered penetration testing framework with MCP protocol support. Connects to Claude, GPT, Copilot, Cursor, or any MCP-compatible AI client.
