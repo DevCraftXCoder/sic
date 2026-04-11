@@ -1,5 +1,7 @@
 <div align="center">
 
+> **Zero-Trust IP Allowlisting** — All admin operations (scans, audits, infra controls) are locked behind IP allowlisting. Even with valid credentials, requests must originate from the home network. VPN, proxy, and foreign IPs are rejected. IPv6 prefix matching requires a minimum /64 specificity to prevent broad-prefix bypass.
+
 # SIC — Security Intelligence Center
 
 ### Private Offensive Security + Admin Operations Platform
