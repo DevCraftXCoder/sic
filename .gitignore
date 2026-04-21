@@ -1,0 +1,36 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.env
+.env.local
+venv/
+hexstrike_env/
+.venv/
+
+# Output / scan results
+output/
+_runs/
+
+# Secrets
+*.key
+*.pem
+api_keys.txt
+secrets.json
+.secrets
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

@@ -4,7 +4,7 @@
 
 # SIC — Security Intelligence Center
 
-### Private Offensive Security + Admin Operations Platform
+### AI-Powered Pentesting MCP Framework for Authorized Security Testing
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -70,7 +70,7 @@ The Docker container enforces 12 security controls:
 | DNS | `127.0.0.1` only | Blocks external hostname resolution |
 | Network | `scanner-net` bridge (internal on Linux) | No cross-container routes |
 | Scanner mode | `SCANNER_MODE=sandbox` | Restricts target scope at app layer |
-| Allowed targets | `staging.frxncois.com,127.0.0.1:9003` | Whitelist-only scanning |
+| Allowed targets | `target.example.com,192.168.1.0/24` | Whitelist-only scanning |
 | Request budget | `MAX_REQUESTS_PER_SCAN=500` | Prevents runaway scans |
 | Dry-run default | `DRY_RUN_DEFAULT=true` | Must explicitly opt into live scans |
 | Scan timeout | `300s` hard wall | Kills scans after 5 minutes |
