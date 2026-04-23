@@ -27,6 +27,15 @@ SIC is an AI-powered penetration testing framework that runs as a local server, 
 
 ---
 
+## Previews
+
+<div align="center">
+<img src="assets/preview-terminal.png" alt="SIC Terminal Interface" width="48%" />
+<img src="assets/preview-dashboard.png" alt="SIC Security Posture Dashboard" width="48%" />
+</div>
+
+---
+
 ## Architecture
 
 SIC runs 150+ real offensive security tools (nmap, sqlmap, nuclei, hydra, etc.) — fully sandboxed in a hardened Docker container with multiple security layers.
