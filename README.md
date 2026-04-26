@@ -328,6 +328,18 @@ This is a private tool shared among trusted peers. If you have access, you alrea
 
 ---
 
+## Recent Additions
+
+- **Zero-Trust IP Allowlisting** — All admin operations locked behind IP allowlisting; IPv6 prefix matching requires minimum /64 specificity
+- **Sandbox Architecture section** — Container security controls documented: 12 controls including `cap_drop: ALL`, non-root user, DNS lockdown, CPU/memory limits
+- **Complete Docker build context** — `hexstrike_launcher` + `requirements-core` added; multi-stage build (Go builder → Python builder → runtime)
+- **Scope enforcer** — `ALLOWED_TARGETS` whitelist enforced at app layer; requests outside the whitelist rejected before tool execution
+- **Discord alerts** — Scan completion + critical finding notifications via webhook
+- **Docker compatibility** — selenium/mitmproxy imports guarded for Docker environments where browser tools are stubbed
+- **SECURITY.md + .gitignore** — Responsible disclosure policy; internal URLs scrubbed from all public-facing documentation
+
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
