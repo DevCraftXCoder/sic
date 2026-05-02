@@ -5,7 +5,7 @@ Routes:
     POST /api/ai/grade  — grade a security finding; returns remediation guidance
 
 Cache: SQLite table ai_grade_cache, keyed by sha256(title+description)[:16], 7-day TTL.
-Returns 503 with {"error": "AI_UNAVAILABLE"} when ANTHROPIC_API_KEY is absent.
+Uses OPENROUTER_API_KEY (preferred) or ANTHROPIC_API_KEY. Returns 503 if neither is set.
 
 Public helpers:
     ai_grade_init_db()  — idempotent schema creation; call from app startup
@@ -144,16 +144,64 @@ Do not include markdown fences or any text outside the JSON object.\
 """
 
 
-def _call_anthropic(title: str, description: str, category: str, severity: str | None) -> dict:
-    """Call Anthropic API and return parsed grading dict. Raises on failure."""
-    import anthropic  # noqa: PLC0415 — optional dependency, fail fast at call time
+def _resolve_api_key() -> tuple[str, str]:
+    """Return (api_key, provider) — prefers OpenRouter, falls back to Anthropic direct.
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    Raises RuntimeError if neither key is set.
+    """
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if key:
+        return key, "openrouter"
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if key:
+        return key, "anthropic"
+    raise RuntimeError("No AI API key configured — set OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
+
+
+def _call_openrouter(api_key: str, title: str, description: str, category: str, severity: str | None) -> dict:
+    """Call OpenRouter chat completions endpoint. Raises on failure."""
+    import requests as _requests  # noqa: PLC0415
+
+    user_content = (
+        f"Category: {category}\n"
+        f"Title: {title}\n"
+        f"Description: {description or '(none provided)'}\n"
+    )
+    if severity:
+        user_content += f"Reported severity: {severity}\n"
+
+    payload = {
+        "model": "anthropic/claude-haiku-4-5",
+        "max_tokens": 512,
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    }
+    resp = _requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/DevCraftXCoder/SIC",
+            "X-Title": "SIC Security Intelligence Center",
+        },
+        json=payload,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+    if raw_text.startswith("```"):
+        lines = raw_text.splitlines()
+        raw_text = "\n".join(line for line in lines if not line.startswith("```")).strip()
+    return json.loads(raw_text)
+
+
+def _call_anthropic_direct(api_key: str, title: str, description: str, category: str, severity: str | None) -> dict:
+    """Call Anthropic API directly. Raises on failure."""
+    import anthropic  # noqa: PLC0415
 
     client = anthropic.Anthropic(api_key=api_key)
-
     user_content = (
         f"Category: {category}\n"
         f"Title: {title}\n"
@@ -168,16 +216,20 @@ def _call_anthropic(title: str, description: str, category: str, severity: str |
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
-
     raw_text = message.content[0].text.strip()
-    # Strip accidental markdown fences if the model wraps output
     if raw_text.startswith("```"):
         lines = raw_text.splitlines()
-        raw_text = "\n".join(
-            line for line in lines if not line.startswith("```")
-        ).strip()
+        raw_text = "\n".join(line for line in lines if not line.startswith("```")).strip()
+    return json.loads(raw_text)
 
-    result: dict = json.loads(raw_text)
+
+def _call_ai(title: str, description: str, category: str, severity: str | None) -> dict:
+    """Route to OpenRouter or Anthropic direct depending on which key is set. Raises on failure."""
+    api_key, provider = _resolve_api_key()
+    if provider == "openrouter":
+        result = _call_openrouter(api_key, title, description, category, severity)
+    else:
+        result = _call_anthropic_direct(api_key, title, description, category, severity)
 
     # Validate required keys; fill defaults for any missing
     result.setdefault("remediation", "No remediation provided.")
@@ -203,9 +255,8 @@ def _call_anthropic(title: str, description: str, category: str, severity: str |
 @ai_grade_bp.post("/grade")
 def grade_finding_route():
     """POST /api/ai/grade — AI-grade a security finding."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return jsonify({"error": "AI_UNAVAILABLE", "message": "ANTHROPIC_API_KEY not configured"}), 503
+    if not os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+        return jsonify({"error": "AI_UNAVAILABLE", "message": "Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY"}), 503
 
     body = request.get_json(silent=True) or {}
     title = body.get("title")
@@ -233,7 +284,7 @@ def grade_finding_route():
 
     # Call API
     try:
-        result = _call_anthropic(title, description, category, severity)
+        result = _call_ai(title, description, category, severity)
     except ImportError:
         return jsonify({"error": "AI_UNAVAILABLE", "message": "anthropic SDK not installed"}), 503
     except RuntimeError as exc:
