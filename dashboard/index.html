@@ -6,35 +6,41 @@
 <title>SIC — Dashboard</title>
 <link rel="stylesheet" href="/dashboard/style.css">
 </head>
-<body>
+<body data-page="dashboard">
 <div class="sic-shell">
+
   <header class="sic-header">
-    <h1>SIC</h1>
+    <div class="sic-header__brand">
+      <span class="sic-header__logo">SIC</span>
+      <span class="sic-header__tagline">Security Intelligence Center</span>
+    </div>
+    <nav class="sic-nav" aria-label="Main navigation">
+      <a class="sic-nav__link" data-page="dashboard" href="/dashboard/index.html">Dashboard</a>
+      <a class="sic-nav__link" data-page="posture" href="/dashboard/posture-grid.html">Posture</a>
+      <a class="sic-nav__link" data-page="incidents" href="/dashboard/incidents.html">Incidents</a>
+      <a class="sic-nav__link" data-page="aifix" href="/dashboard/ai-fix.html">AI Fix</a>
+    </nav>
     <div class="sic-user">
-      <span id="user-email">—</span>
+      <span id="user-email" class="mono">—</span>
       <button id="logout-btn" class="sic-btn sic-btn--ghost">Sign out</button>
     </div>
   </header>
 
+  <!-- Start Scan bar -->
+  <div class="sic-scan-bar">
+    <div class="sic-scan-bar__inner">
+      <input id="scan-target" class="sic-input sic-scan-bar__input" type="text" placeholder="Target (domain, IP, or path)…" autocomplete="off">
+      <button id="scan-btn" class="sic-btn sic-btn--primary">Start Scan</button>
+      <span id="scan-msg"></span>
+    </div>
+  </div>
+
   <div class="sic-grid">
+
     <section class="sic-panel">
       <h2 class="sic-panel__title">Scan Stats</h2>
       <div id="panel-stats" class="sic-stats-row">
         <div class="sic-empty">Loading…</div>
-      </div>
-    </section>
-
-    <section class="sic-panel">
-      <h2 class="sic-panel__title">Recent Scans</h2>
-      <div id="panel-recent">
-        <div class="sic-empty">Loading…</div>
-      </div>
-    </section>
-
-    <section class="sic-panel">
-      <h2 class="sic-panel__title">Alert Channels</h2>
-      <div id="panel-alerts">
-        <div class="sic-empty">Configured channels will appear here once /api/config/alerts ships.</div>
       </div>
     </section>
 
@@ -44,6 +50,21 @@
         <div class="sic-empty">Loading…</div>
       </div>
     </section>
+
+    <section class="sic-panel sic-panel--wide">
+      <h2 class="sic-panel__title">Recent Scans</h2>
+      <div id="panel-recent">
+        <div class="sic-empty">Loading…</div>
+      </div>
+    </section>
+
+    <section class="sic-panel">
+      <h2 class="sic-panel__title">Alert Channels</h2>
+      <div id="panel-alerts">
+        <div class="sic-empty">Alert channel configuration will appear once <span class="mono">/api/config/alerts</span> is implemented.</div>
+      </div>
+    </section>
+
   </div>
 </div>
 <script src="/dashboard/app.js"></script>

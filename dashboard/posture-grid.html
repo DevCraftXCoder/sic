@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIC — Security Posture</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body data-page="posture">
+<div class="sic-shell">
+
+  <header class="sic-header">
+    <div class="sic-header__brand">
+      <span class="sic-header__logo">SIC</span>
+      <span class="sic-header__tagline">Security Intelligence Center</span>
+    </div>
+    <nav class="sic-nav" aria-label="Main navigation">
+      <a class="sic-nav__link" data-page="dashboard" href="/dashboard/index.html">Dashboard</a>
+      <a class="sic-nav__link" data-page="posture" href="/dashboard/posture-grid.html">Posture</a>
+      <a class="sic-nav__link" data-page="incidents" href="/dashboard/incidents.html">Incidents</a>
+      <a class="sic-nav__link" data-page="aifix" href="/dashboard/ai-fix.html">AI Fix</a>
+    </nav>
+    <div class="sic-user">
+      <span id="user-email" class="mono">—</span>
+      <button id="logout-btn" class="sic-btn sic-btn--ghost">Sign out</button>
+    </div>
+  </header>
+
+  <div class="sic-page-head">
+    <h2 class="sic-page-head__title">Security Posture</h2>
+    <p class="sic-page-head__sub" id="posture-scan-info">Loading…</p>
+  </div>
+
+  <div id="posture-grid" class="sic-posture-grid" aria-label="Security domains">
+    <!-- Domain cards injected by app.js -->
+    <div class="sic-empty" style="grid-column:1/-1">Loading posture data…</div>
+  </div>
+
+</div>
+
+<!-- Slide-out panel overlay -->
+<div id="posture-panel-overlay" class="sic-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="posture-panel-title">
+  <div id="posture-panel" class="sic-slide-panel">
+    <div class="sic-slide-panel__header">
+      <h3 id="posture-panel-title" class="sic-slide-panel__title">Domain</h3>
+      <button id="posture-panel-close" class="sic-btn sic-btn--ghost sic-slide-panel__close" aria-label="Close">✕</button>
+    </div>
+    <div id="posture-panel-body" class="sic-slide-panel__body">
+      <!-- Findings injected by app.js -->
+    </div>
+  </div>
+</div>
+
+<script src="/dashboard/app.js"></script>
+</body>
+</html>

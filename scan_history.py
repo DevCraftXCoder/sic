@@ -12,6 +12,7 @@ itself is ungated so internal callers are unaffected.
 """
 
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -341,6 +342,82 @@ def export_scan_route(scan_id: str):
     )
 
 
+@scan_history_bp.get("/scans/diff")
+def diff_scans_route():
+    """GET /api/scans/diff?run_a=<id>&run_b=<id> — compare two scan runs.
+
+    Findings are keyed by sha256(category + ":" + title)[:12].
+    Returns new (only in run_b), resolved (only in run_a), and unchanged findings.
+    """
+    _require_auth()
+    run_a_id = request.args.get("run_a")
+    run_b_id = request.args.get("run_b")
+    if not run_a_id or not run_b_id:
+        return jsonify({"error": "run_a and run_b query parameters are required"}), 400
+    if run_a_id == run_b_id:
+        return jsonify({"error": "run_a and run_b must be different scan IDs"}), 400
+
+    scan_a = get_scan(run_a_id)
+    if scan_a is None:
+        abort(404)
+    scan_b = get_scan(run_b_id)
+    if scan_b is None:
+        abort(404)
+
+    def _stable_key(finding: dict) -> str:
+        """sha256(category:title)[:12] — stable identity key for a finding."""
+        category = str(finding.get("category", ""))
+        title = str(finding.get("title", ""))
+        raw = (category + ":" + title).encode()
+        return hashlib.sha256(raw).hexdigest()[:12]
+
+    findings_a: list[dict] = scan_a.get("findings") or []
+    findings_b: list[dict] = scan_b.get("findings") or []
+
+    # Normalize: ensure every entry is a dict
+    def _normalize(findings: list) -> list[dict]:
+        out: list[dict] = []
+        for f in findings:
+            if isinstance(f, dict):
+                out.append(f)
+            else:
+                out.append({"value": f})
+        return out
+
+    findings_a = _normalize(findings_a)
+    findings_b = _normalize(findings_b)
+
+    map_a: dict[str, dict] = {_stable_key(f): f for f in findings_a}
+    map_b: dict[str, dict] = {_stable_key(f): f for f in findings_b}
+
+    keys_a = set(map_a)
+    keys_b = set(map_b)
+
+    new_findings = [map_b[k] for k in sorted(keys_b - keys_a)]
+    resolved_findings = [map_a[k] for k in sorted(keys_a - keys_b)]
+    unchanged_findings = [map_b[k] for k in sorted(keys_a & keys_b)]
+
+    # Strip heavy fields from meta before returning
+    meta_keys = {"id", "scan_type", "target", "started_at", "finished_at", "duration_s", "status", "findings_count"}
+    meta_a = {k: v for k, v in scan_a.items() if k in meta_keys}
+    meta_b = {k: v for k, v in scan_b.items() if k in meta_keys}
+
+    return jsonify(
+        {
+            "run_a": meta_a,
+            "run_b": meta_b,
+            "new": new_findings,
+            "resolved": resolved_findings,
+            "unchanged": unchanged_findings,
+            "summary": {
+                "new_count": len(new_findings),
+                "resolved_count": len(resolved_findings),
+                "unchanged_count": len(unchanged_findings),
+            },
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # App registration
 # ---------------------------------------------------------------------------
@@ -349,3 +426,115 @@ def export_scan_route(scan_id: str):
 def init_app(app) -> None:
     """Register the scan_history blueprint on a Flask app."""
     app.register_blueprint(scan_history_bp)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Shareable read-only report tokens
+# ---------------------------------------------------------------------------
+
+_share_db_init_done: bool = False
+
+
+def _init_share_db() -> None:
+    """Create share_tokens table if not present.  Idempotent."""
+    global _share_db_init_done
+    if _share_db_init_done:
+        return
+    _init_db()  # ensure scan_runs exists first
+    with _connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS share_tokens (
+                token       TEXT PRIMARY KEY,
+                scan_id     TEXT NOT NULL,
+                created_by  TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                accessed_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_share_tokens_scan ON share_tokens(scan_id)"
+        )
+        conn.commit()
+    _share_db_init_done = True
+
+
+@scan_history_bp.post("/scans/<scan_id>/share")
+def create_share_token_route(scan_id: str):
+    """POST /api/scans/<scan_id>/share — create a shareable read-only token.
+
+    Requires authentication.  Returns the token and a ready-to-use share URL.
+    Tokens expire after 7 days by default.
+    """
+    email = _require_auth()
+    _init_share_db()
+
+    # Verify the scan exists
+    scan = get_scan(scan_id)
+    if scan is None:
+        abort(404)
+
+    token = secrets.token_urlsafe(24)[:32]
+    now = _iso_now()
+    expires_at = (datetime.now(tz=timezone.utc) + timedelta(days=7)).isoformat()
+
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO share_tokens (token, scan_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            (token, scan_id, email, now, expires_at),
+        )
+        conn.commit()
+
+    logger.info("share token created: scan=%s by=%s", scan_id, email)
+    return jsonify({
+        "token": token,
+        "expires_at": expires_at,
+        "share_url": f"/api/scans/shared/{token}",
+    }), 201
+
+
+@scan_history_bp.get("/scans/shared/<share_token>")
+def get_shared_scan_route(share_token: str):
+    """GET /api/scans/shared/<token> — public read-only scan detail.
+
+    No authentication required.  Validates token is not expired, returns the
+    scan detail, and updates accessed_at.
+    """
+    _init_share_db()
+
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM share_tokens WHERE token = ?", (share_token,)
+        ).fetchone()
+
+    if row is None:
+        abort(404)
+
+    token_data = dict(row)
+
+    # Check expiry
+    try:
+        exp_dt = datetime.fromisoformat(token_data["expires_at"])
+        if datetime.now(tz=timezone.utc) > exp_dt:
+            abort(404)
+    except ValueError:
+        abort(404)
+
+    scan = get_scan(token_data["scan_id"])
+    if scan is None:
+        abort(404)
+
+    # Update accessed_at best-effort
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE share_tokens SET accessed_at = ? WHERE token = ?",
+                (_iso_now(), share_token),
+            )
+            conn.commit()
+    except Exception:  # noqa: BLE001
+        pass
+
+    return jsonify(scan)

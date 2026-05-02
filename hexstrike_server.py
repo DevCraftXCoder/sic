@@ -164,6 +164,46 @@ try:
 except ImportError as _bp_err:
     logger.warning("SIC sso blueprint not loaded: %s", _bp_err)
 
+# ----------------------------------------------------------------------------
+# SIC Phase 2 — register incidents blueprint (incident management)
+# ----------------------------------------------------------------------------
+try:
+    from incidents import incidents_bp, incidents_init_db  # noqa: PLC0415
+    incidents_init_db()
+    app.register_blueprint(incidents_bp)
+    logger.info("SIC Phase 2 blueprint registered: incidents")
+except ImportError as e:
+    logger.warning("incidents blueprint unavailable: %s", e)
+
+# ----------------------------------------------------------------------------
+# SIC Phase 3 — register ai_grade blueprint (AI-powered finding grading)
+# ----------------------------------------------------------------------------
+try:
+    from ai_grade import ai_grade_bp, ai_grade_init_db  # noqa: PLC0415
+    ai_grade_init_db()
+    app.register_blueprint(ai_grade_bp)
+    logger.info("SIC Phase 3 blueprint registered: ai_grade")
+except ImportError as e:
+    logger.warning("ai_grade blueprint unavailable: %s", e)
+
+# SIC Phase 4 — register workspaces + api_tokens blueprints (multi-tenant)
+# ----------------------------------------------------------------------------
+try:
+    from workspaces import workspaces_bp, workspaces_init_db  # noqa: PLC0415
+    workspaces_init_db()
+    app.register_blueprint(workspaces_bp)
+    logger.info("SIC Phase 4 blueprint registered: workspaces")
+except ImportError as e:
+    logger.warning("workspaces blueprint unavailable: %s", e)
+
+try:
+    from api_tokens import api_tokens_bp, api_tokens_init_db  # noqa: PLC0415
+    api_tokens_init_db()
+    app.register_blueprint(api_tokens_bp)
+    logger.info("SIC Phase 4 blueprint registered: api_tokens")
+except ImportError as e:
+    logger.warning("api_tokens blueprint unavailable: %s", e)
+
 
 @app.route("/dashboard/", defaults={"filename": "index.html"})
 @app.route("/dashboard/<path:filename>")

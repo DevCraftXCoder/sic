@@ -383,3 +383,98 @@ def require_auth_redirect(f):
 def init_app(app) -> None:
     """Register the auth blueprint on a Flask app."""
     app.register_blueprint(auth_bp)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — RBAC helpers
+# ---------------------------------------------------------------------------
+
+
+def get_session_role(workspace_id: str | None = None) -> str | None:
+    """Return the session user's role in the given workspace, or None.
+
+    Args:
+        workspace_id: The workspace to check membership in.  If None, returns
+            'admin' for any authenticated user (single-tenant fallback for
+            backwards compatibility with pre-workspace code paths).
+
+    Returns:
+        Role string ('admin', 'viewer', 'incident-owner') or None if the user
+        is not authenticated or not a member of the workspace.
+    """
+    email = get_session_email()
+    if not email:
+        return None
+
+    # Single-tenant fallback: no workspace context → treat any authed user as admin
+    if workspace_id is None:
+        return "admin"
+
+    try:
+        import sqlite3  # noqa: PLC0415
+        db_path = _DB_PATH
+        if not db_path.exists():
+            return None
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT role FROM workspace_members WHERE workspace_id = ? AND email = ?",
+                (workspace_id, email),
+            ).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+
+    return row["role"] if row else None
+
+
+def require_role(*roles: str):
+    """Decorator factory: require an authenticated session with one of the given roles.
+
+    Checks the active workspace from the ``sic_workspace`` cookie.  Falls back
+    to the single-tenant behaviour (any authed user == admin) when no workspace
+    cookie is present.
+
+    Usage::
+
+        @require_role('admin', 'incident-owner')
+        def my_view():
+            ...
+
+    Returns:
+        401 JSON if the user is not authenticated.
+        403 JSON if the user is authenticated but lacks the required role.
+    """
+
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            from flask import request as _req  # noqa: PLC0415
+
+            # Resolve active workspace_id from signed cookie (best-effort)
+            workspace_id: str | None = None
+            try:
+                from workspaces import (  # noqa: PLC0415
+                    _WORKSPACE_COOKIE_NAME,
+                    _verify_workspace_cookie,
+                )
+
+                cookie_val = _req.cookies.get(_WORKSPACE_COOKIE_NAME)
+                if cookie_val:
+                    workspace_id = _verify_workspace_cookie(cookie_val)
+            except ImportError:
+                pass  # workspaces module not loaded yet
+
+            role = get_session_role(workspace_id)
+            if role is None:
+                from flask import jsonify as _jsonify  # noqa: PLC0415
+
+                return _jsonify({"error": "unauthorized"}), 401
+            if role not in roles:
+                from flask import jsonify as _jsonify  # noqa: PLC0415
+
+                return _jsonify({"error": "forbidden", "required_roles": list(roles), "current_role": role}), 403
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

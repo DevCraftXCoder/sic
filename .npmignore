@@ -1,0 +1,24 @@
+# Development / test artifacts
+_runs/
+*.png
+*.mp4
+*.log
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+hexstrike_env/
+.venv/
+venv/
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+
+# Git
+.git/
+.gitignore
+
+# CI
+.github/

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIC — AI Fix</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body data-page="aifix">
+<div class="sic-shell">
+
+  <header class="sic-header">
+    <div class="sic-header__brand">
+      <span class="sic-header__logo">SIC</span>
+      <span class="sic-header__tagline">Security Intelligence Center</span>
+    </div>
+    <nav class="sic-nav" aria-label="Main navigation">
+      <a class="sic-nav__link" data-page="dashboard" href="/dashboard/index.html">Dashboard</a>
+      <a class="sic-nav__link" data-page="posture" href="/dashboard/posture-grid.html">Posture</a>
+      <a class="sic-nav__link" data-page="incidents" href="/dashboard/incidents.html">Incidents</a>
+      <a class="sic-nav__link" data-page="aifix" href="/dashboard/ai-fix.html">AI Fix</a>
+    </nav>
+    <div class="sic-user">
+      <span id="user-email" class="mono">—</span>
+      <button id="logout-btn" class="sic-btn sic-btn--ghost">Sign out</button>
+    </div>
+  </header>
+
+  <div class="sic-page-head">
+    <h2 class="sic-page-head__title">AI Remediation</h2>
+    <p class="sic-page-head__sub">Select a finding to request an AI-generated fix.</p>
+  </div>
+
+  <div class="sic-ai-pane">
+
+    <!-- Left: findings list -->
+    <aside class="sic-ai-pane__list">
+      <div class="sic-ai-pane__list-head">Open Findings</div>
+      <div id="ai-findings-list" class="sic-ai-findings">
+        <div class="sic-empty">Loading…</div>
+      </div>
+    </aside>
+
+    <!-- Right: detail + AI fix -->
+    <main class="sic-ai-pane__detail">
+
+      <div id="ai-placeholder" class="sic-ai-placeholder">
+        <div class="sic-ai-placeholder__icon">⬡</div>
+        <div class="sic-ai-placeholder__text">Select a finding from the left panel</div>
+      </div>
+
+      <div id="ai-detail" style="display:none">
+        <div class="sic-ai-detail__header">
+          <span id="ai-detail-severity"></span>
+          <h3 id="ai-detail-title" class="sic-ai-detail__title"></h3>
+        </div>
+        <div class="sic-ai-detail__meta">
+          <div class="sic-ai-detail__row">
+            <span class="sic-ai-detail__key">Category</span>
+            <span id="ai-detail-category" class="sic-ai-detail__val"></span>
+          </div>
+          <div class="sic-ai-detail__row">
+            <span class="sic-ai-detail__key">Location</span>
+            <span id="ai-detail-location" class="sic-ai-detail__val mono"></span>
+          </div>
+        </div>
+        <div class="sic-ai-detail__desc" id="ai-detail-desc"></div>
+
+        <div class="sic-ai-detail__action">
+          <button id="ai-get-fix-btn" class="sic-btn sic-btn--primary">Get AI Fix</button>
+        </div>
+
+        <div id="ai-fix-result" class="sic-ai-fix-result" style="display:none">
+          <!-- Populated by app.js -->
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+</div>
+<script src="/dashboard/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIC — Incidents</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body data-page="incidents">
+<div class="sic-shell">
+
+  <header class="sic-header">
+    <div class="sic-header__brand">
+      <span class="sic-header__logo">SIC</span>
+      <span class="sic-header__tagline">Security Intelligence Center</span>
+    </div>
+    <nav class="sic-nav" aria-label="Main navigation">
+      <a class="sic-nav__link" data-page="dashboard" href="/dashboard/index.html">Dashboard</a>
+      <a class="sic-nav__link" data-page="posture" href="/dashboard/posture-grid.html">Posture</a>
+      <a class="sic-nav__link" data-page="incidents" href="/dashboard/incidents.html">Incidents</a>
+      <a class="sic-nav__link" data-page="aifix" href="/dashboard/ai-fix.html">AI Fix</a>
+    </nav>
+    <div class="sic-user">
+      <span id="user-email" class="mono">—</span>
+      <button id="logout-btn" class="sic-btn sic-btn--ghost">Sign out</button>
+    </div>
+  </header>
+
+  <div class="sic-page-head">
+    <h2 class="sic-page-head__title">Incident Console</h2>
+    <button id="new-incident-btn" class="sic-btn sic-btn--primary">+ New Incident</button>
+  </div>
+
+  <!-- New Incident inline form -->
+  <div id="new-incident-form" class="sic-inline-form" style="display:none">
+    <div class="sic-inline-form__inner">
+      <h3 class="sic-inline-form__title">New Incident</h3>
+      <div class="sic-inline-form__row">
+        <div class="sic-inline-form__field" style="flex:2">
+          <label class="sic-label" for="ni-title">Title</label>
+          <input id="ni-title" class="sic-input" type="text" placeholder="Brief description of the incident" autocomplete="off">
+        </div>
+        <div class="sic-inline-form__field">
+          <label class="sic-label" for="ni-severity">Severity</label>
+          <select id="ni-severity" class="sic-input">
+            <option value="P0">P0 — Critical</option>
+            <option value="P1">P1 — High</option>
+            <option value="P2" selected>P2 — Medium</option>
+          </select>
+        </div>
+      </div>
+      <div class="sic-inline-form__field">
+        <label class="sic-label" for="ni-description">Description</label>
+        <textarea id="ni-description" class="sic-input" rows="3" placeholder="What happened? What's the blast radius?"></textarea>
+      </div>
+      <div class="sic-inline-form__actions">
+        <button id="new-incident-submit" class="sic-btn sic-btn--primary">Create Incident</button>
+        <button id="new-incident-cancel" class="sic-btn">Cancel</button>
+        <span id="new-incident-msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="sic-filter-bar">
+    <span class="sic-filter-bar__label">Severity:</span>
+    <button class="sic-btn sic-btn--ghost sic-filter-btn" data-sev-filter="P0">P0</button>
+    <button class="sic-btn sic-btn--ghost sic-filter-btn" data-sev-filter="P1">P1</button>
+    <button class="sic-btn sic-btn--ghost sic-filter-btn" data-sev-filter="P2">P2</button>
+
+    <span class="sic-filter-bar__sep"></span>
+
+    <span class="sic-filter-bar__label">Status:</span>
+    <button class="sic-btn sic-btn--ghost sic-filter-btn" data-status-filter="open">Open</button>
+    <button class="sic-btn sic-btn--ghost sic-filter-btn" data-status-filter="in-progress">In Progress</button>
+    <button class="sic-btn sic-btn--ghost sic-filter-btn" data-status-filter="resolved">Resolved</button>
+  </div>
+
+  <!-- Incidents table -->
+  <div class="sic-panel sic-panel--flush">
+    <table class="sic-table sic-incidents-table">
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody id="incidents-tbody">
+        <!-- Rows injected by app.js -->
+      </tbody>
+    </table>
+    <div id="incidents-empty" class="sic-empty" style="display:none;padding:24px 16px">No incidents match the current filters.</div>
+  </div>
+
+</div>
+<script src="/dashboard/app.js"></script>
+</body>
+</html>

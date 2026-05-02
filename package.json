@@ -1,0 +1,36 @@
+{
+  "name": "sic-security",
+  "version": "6.0.0-beta.1",
+  "description": "SIC — AI-Powered Security Intelligence Center: MCP framework with 150+ pentesting tools for authorized security testing, CTF, and defensive research",
+  "keywords": ["security", "pentesting", "mcp", "ai", "ctf", "bug-bounty", "red-team"],
+  "license": "MIT",
+  "bin": {
+    "sic": "./bin/sic.js"
+  },
+  "files": [
+    "bin/",
+    "assets/",
+    "hexstrike_launcher.py",
+    "hexstrike_server.py",
+    "hexstrike_mcp.py",
+    "scan_alerts.py",
+    "scope_enforcer.py",
+    "requirements.txt",
+    "requirements-core.txt",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DevCraftXCoder/sic.git"
+  },
+  "homepage": "https://frxncois.workers.dev/sic"
+}
