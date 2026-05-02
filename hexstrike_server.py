@@ -132,6 +132,36 @@ def _load_sic_config() -> dict:
 
 SIC_CONFIG: dict = _load_sic_config()
 
+# ----------------------------------------------------------------------------
+# SIC P0 — register auth + scan-history blueprints + dashboard static route
+# ----------------------------------------------------------------------------
+try:
+    from auth import auth_bp, get_session_email  # noqa: PLC0415
+    from scan_history import scan_history_bp  # noqa: PLC0415
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(scan_history_bp)
+    logger.info("SIC P0 blueprints registered: auth, scan_history")
+except ImportError as _bp_err:
+    logger.warning("SIC P0 blueprints not loaded: %s", _bp_err)
+    get_session_email = None  # type: ignore[assignment]
+
+
+@app.route("/dashboard/", defaults={"filename": "index.html"})
+@app.route("/dashboard/<path:filename>")
+def serve_dashboard(filename):
+    """Serve SIC dashboard static files. login.html / style.css / app.js are public."""
+    import pathlib as _pl  # noqa: PLC0415
+    from flask import send_from_directory, redirect  # noqa: PLC0415
+
+    public = filename in ("login.html", "style.css", "app.js")
+    if not public and get_session_email is not None and not get_session_email():
+        return redirect("/dashboard/login.html")
+    base = _pl.Path(__file__).parent / "dashboard"
+    if not base.exists():
+        return "/* SIC dashboard directory missing */", 404
+    return send_from_directory(str(base), filename)
+
+
 # API Configuration
 API_PORT = int(os.environ.get('HEXSTRIKE_PORT', 8888))
 API_HOST = os.environ.get('HEXSTRIKE_HOST', '127.0.0.1')

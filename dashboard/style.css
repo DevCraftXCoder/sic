@@ -33,3 +33,42 @@ body {
 .accent { color: var(--sic-accent); }
 .surface { background: var(--sic-surface); border: 1px solid var(--sic-border); border-radius: 6px; }
 .mono { font-family: var(--sic-font-mono); }
+
+.sic-shell { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
+header.sic-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 1px solid var(--sic-border); flex-wrap: wrap; gap: 12px; }
+header.sic-header h1 { color: var(--sic-accent); font-family: var(--sic-font-mono); margin: 0; font-size: 22px; letter-spacing: 0.5px; }
+.sic-user { color: var(--sic-text-muted); font-family: var(--sic-font-mono); font-size: 13px; display: flex; align-items: center; gap: 12px; }
+.sic-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 1024px) { .sic-grid { grid-template-columns: 1fr 1fr; } }
+.sic-panel { background: var(--sic-surface); border: 1px solid var(--sic-border); border-radius: 8px; padding: 20px; }
+.sic-panel__title { color: var(--sic-text); font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; margin: 0 0 16px 0; opacity: 0.65; }
+.sic-stats-row { display: flex; flex-wrap: wrap; gap: 24px; }
+.sic-stat { min-width: 80px; }
+.sic-stat__num { color: var(--sic-accent); font-family: var(--sic-font-mono); font-size: 28px; font-weight: 700; line-height: 1; }
+.sic-stat__label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--sic-text-muted); margin-top: 4px; }
+.sic-table { width: 100%; border-collapse: collapse; font-family: var(--sic-font-mono); font-size: 12px; }
+.sic-table th { text-align: left; color: var(--sic-text-muted); border-bottom: 1px solid var(--sic-border); padding: 8px 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
+.sic-table td { padding: 8px 4px; border-bottom: 1px solid var(--sic-border); color: var(--sic-text); }
+.sic-table tr:last-child td { border-bottom: 0; }
+.sic-status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+.sic-status--completed { background: rgba(56,178,107,0.15); color: #5acc8a; }
+.sic-status--failed { background: rgba(220,80,90,0.15); color: #ff5266; }
+.sic-status--running { background: rgba(80,150,220,0.15); color: #6cb0ff; }
+.sic-status--killed { background: rgba(180,180,80,0.15); color: #d4cd5a; }
+.sic-form-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+.sic-form { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 380px; padding: 32px; background: var(--sic-surface); border: 1px solid var(--sic-border); border-radius: 8px; }
+.sic-form h1 { color: var(--sic-accent); font-family: var(--sic-font-mono); margin: 0 0 8px 0; font-size: 22px; letter-spacing: 0.5px; }
+.sic-form label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--sic-text-muted); }
+.sic-input { background: var(--sic-bg); color: var(--sic-text); border: 1px solid var(--sic-border); border-radius: 4px; padding: 10px 12px; font-family: var(--sic-font-body); font-size: 14px; width: 100%; box-sizing: border-box; }
+.sic-input:focus { outline: 2px solid var(--sic-accent); outline-offset: -1px; border-color: var(--sic-accent); }
+.sic-btn { background: transparent; color: var(--sic-text); border: 1px solid var(--sic-border); border-radius: 4px; padding: 10px 16px; cursor: pointer; font-family: var(--sic-font-body); font-size: 13px; transition: border-color 120ms ease, background 120ms ease; }
+.sic-btn:hover { border-color: var(--sic-accent); }
+.sic-btn--primary { background: var(--sic-accent); border-color: var(--sic-accent); color: var(--sic-bg); font-weight: 600; }
+.sic-btn--primary:hover { filter: brightness(1.1); border-color: var(--sic-accent); }
+.sic-btn--ghost { background: transparent; padding: 6px 12px; font-size: 12px; }
+.sic-empty { color: var(--sic-text-muted); font-style: italic; padding: 20px 0; font-size: 13px; }
+.sic-error { color: #ff5266; font-family: var(--sic-font-mono); font-size: 12px; margin-top: 8px; }
+.sic-success { color: #5acc8a; font-family: var(--sic-font-mono); font-size: 12px; margin-top: 8px; }
+.sic-link { color: var(--sic-accent); text-decoration: none; word-break: break-all; }
+.sic-link:hover { text-decoration: underline; }
+.sic-health { font-family: var(--sic-font-mono); font-size: 12px; color: var(--sic-text); white-space: pre-wrap; max-height: 240px; overflow: auto; background: var(--sic-bg); padding: 12px; border-radius: 4px; }

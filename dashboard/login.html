@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIC — Sign In</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+<main class="sic-form-page">
+  <form id="login-form" class="sic-form" autocomplete="email">
+    <h1>SIC</h1>
+    <p class="sic-stat__label">Security Intelligence Center</p>
+    <label for="email">Admin email</label>
+    <input id="email" name="email" type="email" class="sic-input" required autofocus>
+    <button type="submit" class="sic-btn sic-btn--primary">Send magic link</button>
+    <div id="login-msg"></div>
+  </form>
+</main>
+<script src="/dashboard/app.js"></script>
+</body>
+</html>
