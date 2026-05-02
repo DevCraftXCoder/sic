@@ -1,0 +1,9 @@
+{
+  "_comment": "SIC Admin UI IP allowlist. Set deny_default to true to block all unlisted IPs.",
+  "deny_default": true,
+  "allow": [
+    "127.0.0.1/8",
+    "::1"
+  ],
+  "instructions": "Add your static IP or VPN CIDR block to the allow array. CIDR notation is supported."
+}

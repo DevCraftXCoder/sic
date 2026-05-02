@@ -1,11 +1,17 @@
-"""Discord webhook alerting for SIC scan lifecycle events."""
+"""Discord, Slack, generic webhook, and email alerting for SIC scan lifecycle events."""
 
 from __future__ import annotations
 
+import email.mime.multipart
+import email.mime.text
+import hashlib
 import logging
 import os
+import smtplib
+import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -31,13 +37,32 @@ _TITLES: dict[str, str] = {
     "unauthorized_attempt": "Unauthorized Scan Attempt",
 }
 
+# Events that trigger email and deduplication
+_EMAIL_EVENTS: frozenset[str] = frozenset({"critical_finding", "unauthorized_attempt"})
+
+# ---------------------------------------------------------------------------
+# Lazy-init URL / config helpers
+# ---------------------------------------------------------------------------
+
 _WEBHOOK_URL: str | None = None
 _url_checked: bool = False
 _url_lock = threading.Lock()
 
+_SLACK_URL: str | None = None
+_slack_checked: bool = False
+_slack_lock = threading.Lock()
+
+_GENERIC_URL: str | None = None
+_generic_checked: bool = False
+_generic_lock = threading.Lock()
+
+_ALERT_EMAIL: str | None = None
+_email_checked: bool = False
+_email_lock = threading.Lock()
+
 
 def _get_webhook_url() -> str | None:
-    """Return the webhook URL, logging a warning once if unset."""
+    """Return the Discord webhook URL, logging a warning once if unset."""
     global _WEBHOOK_URL, _url_checked
     with _url_lock:
         if not _url_checked:
@@ -49,6 +74,45 @@ def _get_webhook_url() -> str | None:
                 )
     return _WEBHOOK_URL
 
+
+# Alias used by updated send_scan_alert
+def _get_discord_url() -> str | None:
+    return _get_webhook_url()
+
+
+def _get_slack_url() -> str | None:
+    """Return the Slack webhook URL, logging a warning once if unset."""
+    global _SLACK_URL, _slack_checked
+    with _slack_lock:
+        if not _slack_checked:
+            _slack_checked = True
+            _SLACK_URL = os.environ.get("SLACK_WEBHOOK_URL") or None
+    return _SLACK_URL
+
+
+def _get_generic_webhook_url() -> str | None:
+    """Return the generic SIC webhook URL."""
+    global _GENERIC_URL, _generic_checked
+    with _generic_lock:
+        if not _generic_checked:
+            _generic_checked = True
+            _GENERIC_URL = os.environ.get("SIC_WEBHOOK_URL") or None
+    return _GENERIC_URL
+
+
+def _get_alert_email() -> str | None:
+    """Return the SIC alert email recipients string."""
+    global _ALERT_EMAIL, _email_checked
+    with _email_lock:
+        if not _email_checked:
+            _email_checked = True
+            _ALERT_EMAIL = os.environ.get("SIC_ALERT_EMAIL") or None
+    return _ALERT_EMAIL
+
+
+# ---------------------------------------------------------------------------
+# Field builder (shared)
+# ---------------------------------------------------------------------------
 
 def _build_fields(details: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert a flat details dict into Discord embed fields."""
@@ -70,6 +134,63 @@ def _build_fields(details: dict[str, Any]) -> list[dict[str, Any]]:
     return fields
 
 
+# ---------------------------------------------------------------------------
+# First-failure-only deduplication
+# ---------------------------------------------------------------------------
+
+def _db_path() -> Path:
+    p = Path.home() / ".sic"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / "state.db"
+
+
+def _make_finding_id(event: str, details: dict[str, Any]) -> str:
+    """Return a 16-char hex ID derived from the event + target + finding."""
+    raw = f"{event}:{details.get('target', '')}:{details.get('finding', '')}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _already_alerted(finding_id: str) -> bool:
+    """Return True if this finding_id has already been alerted within 30 days.
+
+    Uses SQLite at ~/.sic/state.db.  Cleans up expired rows on each call.
+    """
+    db = _db_path()
+    now_iso = datetime.now(tz=timezone.utc).isoformat()
+    expires_iso = (datetime.now(tz=timezone.utc) + timedelta(days=30)).isoformat()
+
+    try:
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS alerted_findings "
+                "(id TEXT PRIMARY KEY, first_alerted_at TEXT NOT NULL, expires_at TEXT NOT NULL)"
+            )
+            # Purge stale rows
+            conn.execute(
+                "DELETE FROM alerted_findings WHERE expires_at < ?", (now_iso,)
+            )
+            # Check if row already exists
+            row = conn.execute(
+                "SELECT id FROM alerted_findings WHERE id = ?", (finding_id,)
+            ).fetchone()
+            if row:
+                return True
+            # First time — record it
+            conn.execute(
+                "INSERT INTO alerted_findings (id, first_alerted_at, expires_at) VALUES (?, ?, ?)",
+                (finding_id, now_iso, expires_iso),
+            )
+            conn.commit()
+            return False
+    except Exception:
+        logger.debug("_already_alerted DB error for id %s", finding_id, exc_info=True)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Fire functions
+# ---------------------------------------------------------------------------
+
 def _fire_webhook(event: str, details: dict[str, Any]) -> None:
     """Send the Discord webhook request (runs in a daemon thread)."""
     url = _get_webhook_url()
@@ -84,7 +205,7 @@ def _fire_webhook(event: str, details: dict[str, Any]) -> None:
                     "color": _COLORS.get(event, 0),
                     "timestamp": datetime.now(tz=timezone.utc).isoformat(),
                     "fields": _build_fields(details),
-                    "footer": {"text": "SIC Scanner \u2022 HexStrike AI"},
+                    "footer": {"text": "SIC Scanner • HexStrike AI"},
                 }
             ]
         }
@@ -93,20 +214,176 @@ def _fire_webhook(event: str, details: dict[str, Any]) -> None:
         logger.debug("Discord alert delivery failed for event '%s'", event, exc_info=True)
 
 
+def _fire_slack(event: str, details: dict[str, Any]) -> None:
+    """Send a Slack Block Kit webhook alert (runs in a daemon thread)."""
+    url = _get_slack_url()
+    if not url:
+        return
+    try:
+        label_map = {
+            "scan_type": "Scan Type",
+            "target": "Target",
+            "duration": "Duration",
+            "findings_count": "Findings",
+            "error": "Error",
+            "severity": "Severity",
+            "finding": "Finding",
+            "reason": "Reason",
+            "ip": "IP Address",
+        }
+        fields = []
+        for key, value in details.items():
+            label = label_map.get(key, key.replace("_", " ").title())
+            fields.append({"type": "mrkdwn", "text": f"*{label}*\n{value}"})
+
+        blocks: list[dict[str, Any]] = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": _TITLES.get(event, event),
+                    "emoji": True,
+                },
+            },
+        ]
+        if fields:
+            blocks.append({"type": "section", "fields": fields})
+
+        requests.post(url, json={"blocks": blocks}, timeout=5)
+    except Exception:
+        logger.debug("Slack alert delivery failed for event '%s'", event, exc_info=True)
+
+
+def _fire_webhook_generic(event: str, details: dict[str, Any]) -> None:
+    """Send a generic HTTPS webhook alert (runs in a daemon thread)."""
+    url = _get_generic_webhook_url()
+    if not url:
+        return
+    try:
+        payload: dict[str, Any] = {
+            "event": event,
+            "title": _TITLES.get(event, event),
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "details": details,
+        }
+        requests.post(url, json=payload, timeout=5)
+    except Exception:
+        logger.debug("Generic webhook delivery failed for event '%s'", event, exc_info=True)
+
+
+def _fire_email(event: str, details: dict[str, Any]) -> None:
+    """Send a transactional email alert (runs in a daemon thread).
+
+    Only fires for critical_finding and unauthorized_attempt.
+    Tries Resend API first, falls back to smtplib.
+    """
+    if event not in _EMAIL_EVENTS:
+        return
+
+    recipients_raw = _get_alert_email()
+    if not recipients_raw:
+        return
+
+    recipients = [r.strip() for r in recipients_raw.split(",") if r.strip()]
+    if not recipients:
+        return
+
+    from_addr = os.environ.get("SIC_ALERT_FROM", "sic-alerts@hexstrike.ai")
+    title = _TITLES.get(event, event)
+    subject = f"[SIC] {title}"
+
+    # Build HTML body
+    rows_html = "".join(
+        f"<tr><th style='text-align:left;padding:4px 8px;'>{f['name']}</th>"
+        f"<td style='padding:4px 8px;'>{f['value']}</td></tr>"
+        for f in _build_fields(details)
+    )
+    html_body = (
+        f"<html><body>"
+        f"<h2 style='color:#c0392b'>{title}</h2>"
+        f"<table border='1' cellpadding='0' cellspacing='0' style='border-collapse:collapse;'>"
+        f"{rows_html}"
+        f"</table>"
+        f"<p style='color:#888;font-size:12px;'>SIC Scanner &bull; HexStrike AI</p>"
+        f"</body></html>"
+    )
+
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if resend_key:
+        try:
+            requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                json={"from": from_addr, "to": recipients, "subject": subject, "html": html_body},
+                timeout=5,
+            )
+            return
+        except Exception:
+            logger.debug("Resend email delivery failed for event '%s', trying SMTP", event, exc_info=True)
+
+    # SMTP fallback
+    smtp_host = os.environ.get("SIC_SMTP_HOST")
+    if not smtp_host:
+        logger.debug("SIC_SMTP_HOST not set — SMTP email fallback unavailable for event '%s'", event)
+        return
+
+    try:
+        smtp_port = int(os.environ.get("SIC_SMTP_PORT", "587"))
+        smtp_user = os.environ.get("SIC_SMTP_USER", "")
+        smtp_pass = os.environ.get("SIC_SMTP_PASS", "")
+
+        msg = email.mime.multipart.MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = ", ".join(recipients)
+        msg.attach(email.mime.text.MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls()
+            if smtp_user:
+                server.login(smtp_user, smtp_pass)
+            server.sendmail(from_addr, recipients, msg.as_string())
+    except Exception:
+        logger.debug("SMTP email delivery failed for event '%s'", event, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def send_scan_alert(event: str, details: dict[str, Any] | None = None) -> None:
-    """Fire a Discord alert for a scan lifecycle event (non-blocking).
+    """Fire alerts across all configured channels for a scan lifecycle event.
+
+    Non-blocking: each channel fires in its own daemon thread.
 
     Args:
         event: One of scan_started, scan_completed, scan_failed, scan_killed,
                critical_finding, unauthorized_attempt.
-        details: Optional flat dict of key/value pairs to render as embed fields.
-                 Special key ``description`` becomes the embed description text.
+        details: Optional flat dict of key/value pairs to render as fields.
+                 Special key ``description`` becomes the Discord embed description.
     """
-    if not _get_webhook_url():
-        return
+    payload = dict(details) if details else {}
+
+    # Deduplication for alert-worthy events
+    if event in _EMAIL_EVENTS:
+        fid = _make_finding_id(event, payload)
+        if _already_alerted(fid):
+            logger.debug("Suppressed duplicate alert for finding %s", fid)
+            return
+
     try:
-        payload = dict(details) if details else {}
-        t = threading.Thread(target=_fire_webhook, args=(event, payload), daemon=True)
-        t.start()
+        if _get_discord_url():
+            t = threading.Thread(target=_fire_webhook, args=(event, dict(payload)), daemon=True)
+            t.start()
+        if _get_slack_url():
+            t = threading.Thread(target=_fire_slack, args=(event, dict(payload)), daemon=True)
+            t.start()
+        if _get_generic_webhook_url():
+            t = threading.Thread(target=_fire_webhook_generic, args=(event, dict(payload)), daemon=True)
+            t.start()
+        if _get_alert_email():
+            t = threading.Thread(target=_fire_email, args=(event, dict(payload)), daemon=True)
+            t.start()
     except Exception:
-        logger.debug("Failed to dispatch Discord alert thread for event '%s'", event, exc_info=True)
+        logger.debug("Failed to dispatch alert threads for event '%s'", event, exc_info=True)

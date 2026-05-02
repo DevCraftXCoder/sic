@@ -1,0 +1,35 @@
+/* SIC Dashboard — base stylesheet stub
+ * The --sic-accent color is dynamically injected at runtime.
+ * See GET /dashboard/style.css route in hexstrike_server.py.
+ * Set SIC_ACCENT_COLOR env var to override the default accent.
+ */
+
+:root {
+  --sic-accent: #e94560;
+  --sic-accent-dim: #b02040;
+  --sic-bg: #0a0a0a;
+  --sic-surface: #141414;
+  --sic-surface-2: #1e1e1e;
+  --sic-text: #e0e0e0;
+  --sic-text-muted: #888888;
+  --sic-border: #2a2a2a;
+  --sic-font-body: 'DM Sans', system-ui, sans-serif;
+  --sic-font-mono: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--sic-bg);
+  color: var(--sic-text);
+  font-family: var(--sic-font-body);
+  margin: 0;
+}
+
+.accent { color: var(--sic-accent); }
+.surface { background: var(--sic-surface); border: 1px solid var(--sic-border); border-radius: 6px; }
+.mono { font-family: var(--sic-font-mono); }

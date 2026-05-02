@@ -104,6 +104,34 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
 
+
+def _load_sic_config() -> dict:
+    """Load SIC runtime config from environment variables with sensible defaults."""
+    import os as _os
+    return {
+        "engine": {
+            "host": _os.environ.get("SIC_HOST", "127.0.0.1"),
+            "port": int(_os.environ.get("SIC_PORT", "9888")),
+        },
+        "security": {
+            "ipAllowlist": _os.environ.get("SIC_IP_ALLOWLIST", "127.0.0.1/8,::1").split(","),
+            "denyDefault": _os.environ.get("SIC_DENY_DEFAULT", "true").lower() == "true",
+        },
+        "alerts": {
+            "firstFailureOnly": _os.environ.get("SIC_FIRST_FAILURE_ONLY", "true").lower() == "true",
+        },
+        "scan": {
+            "defaultTimeout": int(_os.environ.get("SIC_DEFAULT_TIMEOUT", "300")),
+            "maxParallel": int(_os.environ.get("SIC_MAX_PARALLEL", "4")),
+        },
+        "ui": {
+            "accentColor": _os.environ.get("SIC_ACCENT_COLOR", "#e94560"),
+        },
+    }
+
+
+SIC_CONFIG: dict = _load_sic_config()
+
 # API Configuration
 API_PORT = int(os.environ.get('HEXSTRIKE_PORT', 8888))
 API_HOST = os.environ.get('HEXSTRIKE_HOST', '127.0.0.1')
@@ -17308,3 +17336,114 @@ if __name__ == "__main__":
             logger.info(line)
 
     app.run(host="0.0.0.0", port=API_PORT, debug=DEBUG_MODE)
+
+
+# ── Logo upload routes ─────────────────────────────────────────────────────────
+_ASSETS_DIR = Path(__file__).parent / "assets"
+_ALLOWED_MAGIC = {
+    b"\x89PNG": "sic-logo.png",
+    b"\xff\xd8\xff": "sic-logo.jpg",
+    b"<svg": "sic-logo.svg",
+    b"<?xm": "sic-logo.svg",
+}
+_MAX_LOGO_BYTES = 2 * 1024 * 1024  # 2 MB
+
+
+@app.route("/api/logo", methods=["POST"])
+def upload_logo():
+    if "logo" not in request.files:
+        return jsonify({"error": "no file field 'logo'"}), 400
+    f = request.files["logo"]
+    data = f.read(_MAX_LOGO_BYTES + 1)
+    if len(data) > _MAX_LOGO_BYTES:
+        return jsonify({"error": "file too large (max 2 MB)"}), 413
+    # Validate magic bytes — never trust MIME type alone
+    magic = data[:4]
+    ext = None
+    for sig, name in _ALLOWED_MAGIC.items():
+        if magic[: len(sig)] == sig or (sig == b"<svg" and data.lstrip()[:4] == b"<svg"):
+            ext = name
+            break
+    if ext is None:
+        return jsonify({"error": "unsupported format — SVG or PNG only"}), 415
+    dest = _ASSETS_DIR / ext
+    dest.write_bytes(data)
+    return jsonify({"ok": True, "saved": ext, "size": len(data)}), 200
+
+
+@app.route("/logo-upload", methods=["GET"])
+def logo_upload_page():
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SIC — Upload Logo</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0a0a;color:#e0e0e0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .card{background:#111;border:1px solid #222;border-radius:12px;padding:40px;max-width:480px;width:100%}
+    h1{color:#e94560;font-size:1.4rem;margin-bottom:8px}
+    p{color:#666;font-size:.85rem;margin-bottom:28px}
+    .drop{border:2px dashed #333;border-radius:8px;padding:48px 24px;text-align:center;cursor:pointer;transition:border-color .2s}
+    .drop:hover,.drop.over{border-color:#e94560}
+    .drop input{display:none}
+    .preview{margin-top:20px;text-align:center;display:none}
+    .preview img{max-height:120px;max-width:100%;border-radius:6px;border:1px solid #222}
+    button{margin-top:24px;width:100%;background:#e94560;color:#fff;border:none;border-radius:8px;padding:12px;font-size:1rem;cursor:pointer;font-weight:600}
+    button:disabled{background:#333;color:#555;cursor:not-allowed}
+    .msg{margin-top:16px;font-size:.85rem;text-align:center;min-height:20px}
+    .ok{color:#4caf50}.err{color:#e94560}
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>SIC — Upload Logo</h1>
+  <p>Replace the default SIC logo. Accepts SVG or PNG, max 2 MB.</p>
+  <div class="drop" id="drop">
+    <input type="file" id="file" accept=".svg,.png,image/svg+xml,image/png">
+    <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#444"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 10l-4-4m0 0L8 10m4-4v12"/></svg>
+    <p style="margin-top:12px;color:#555">Drop SVG / PNG here or <span style="color:#e94560">click to browse</span></p>
+  </div>
+  <div class="preview" id="preview"><img id="thumb" src="" alt="preview"></div>
+  <button id="btn" disabled>Upload Logo</button>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+const drop=document.getElementById('drop'),file=document.getElementById('file'),btn=document.getElementById('btn'),msg=document.getElementById('msg'),preview=document.getElementById('preview'),thumb=document.getElementById('thumb');
+let chosen=null;
+drop.addEventListener('click',()=>file.click());
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});
+drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');pick(e.dataTransfer.files[0])});
+file.addEventListener('change',()=>pick(file.files[0]));
+function pick(f){if(!f)return;chosen=f;const r=new FileReader();r.onload=e=>{thumb.src=e.target.result;preview.style.display='block'};r.readAsDataURL(f);btn.disabled=false;msg.textContent=''}
+btn.addEventListener('click',async()=>{
+  if(!chosen)return;
+  const fd=new FormData();fd.append('logo',chosen);
+  btn.disabled=true;msg.className='msg';msg.textContent='Uploading…';
+  try{
+    const r=await fetch('/api/logo',{method:'POST',body:fd});
+    const j=await r.json();
+    if(r.ok){msg.className='msg ok';msg.textContent='Logo saved as '+j.saved}
+    else{msg.className='msg err';msg.textContent=j.error||'Upload failed'}
+  }catch(e){msg.className='msg err';msg.textContent='Network error'}
+  btn.disabled=false;
+});
+</script>
+</body>
+</html>"""
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/dashboard/style.css")
+def serve_dashboard_css():
+    """Serve dashboard CSS with runtime accent color injection."""
+    import pathlib
+    css_path = pathlib.Path(__file__).parent / "dashboard" / "style.css"
+    if not css_path.exists():
+        return "/* SIC dashboard/style.css not found */", 404, {"Content-Type": "text/css"}
+    css = css_path.read_text(encoding="utf-8")
+    accent = SIC_CONFIG.get("ui", {}).get("accentColor", "#e94560")
+    css = css.replace("--sic-accent: #e94560", f"--sic-accent: {accent}")
+    return css, 200, {"Content-Type": "text/css; charset=utf-8"}
