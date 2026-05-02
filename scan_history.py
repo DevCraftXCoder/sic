@@ -783,3 +783,67 @@ def get_shared_scan_route(share_token: str):
         pass
 
     return jsonify(scan)
+
+
+# ---------------------------------------------------------------------------
+# BUGS.md archive
+# ---------------------------------------------------------------------------
+
+@scan_history_bp.get("/bugs-archive")
+def bugs_archive_route():
+    """GET /api/bugs-archive — Resolved incidents cross-referenced with BUGS.md.
+
+    Searches for BUGS.md in the SIC repo root and parent directories (up to 3
+    levels).  Returns parsed checkbox entries alongside resolved incidents from
+    the local SQLite store.
+    """
+    import re as _re
+
+    bugs_text = None
+    for p in [
+        Path(__file__).parent / "BUGS.md",
+        Path(__file__).parent.parent / "BUGS.md",
+        Path(__file__).parent.parent.parent / "BUGS.md",
+        Path.cwd() / "BUGS.md",
+    ]:
+        if p.exists():
+            try:
+                bugs_text = p.read_text(encoding="utf-8")
+            except OSError:
+                pass
+            break
+
+    entries: list[dict] = []
+    if bugs_text:
+        for line in bugs_text.splitlines():
+            m = _re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)", line)
+            if m:
+                resolved = m.group(1).lower() == "x"
+                entries.append({
+                    "text": m.group(2).strip(),
+                    "resolved": resolved,
+                    "status": "resolved" if resolved else "open",
+                })
+
+    resolved_incidents: list[dict] = []
+    try:
+        _init_db()
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id, title, severity, status, resolved_at, created_at"
+                " FROM incidents WHERE status = 'resolved'"
+                " ORDER BY resolved_at DESC LIMIT 100"
+            ).fetchall()
+            resolved_incidents = [dict(r) for r in rows]
+    except Exception:  # noqa: BLE001
+        pass
+
+    return jsonify({
+        "bugs_md_found": bugs_text is not None,
+        "bugs_md_entries": entries,
+        "resolved_entries": [e for e in entries if e["resolved"]],
+        "open_entries": [e for e in entries if not e["resolved"]],
+        "resolved_incidents": resolved_incidents,
+        "total_bugs": len(entries),
+        "total_resolved_incidents": len(resolved_incidents),
+    })
