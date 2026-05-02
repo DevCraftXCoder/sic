@@ -237,6 +237,39 @@ python sic_launcher.py --port 5001
 pm2 start sic_launcher.py --name sic-server --interpreter python
 ```
 
+### PowerShell Install
+
+Load the helper functions in any PowerShell session by dot-sourcing the bundled profile:
+
+```powershell
+. "C:\path\to\sic\install\sic-profile.ps1"
+```
+
+To load automatically on every PowerShell session, open your profile file and add the line permanently:
+
+```powershell
+notepad $PROFILE
+```
+
+Then add this line inside the file (adjust the path to match your clone location):
+
+```powershell
+. "C:\Za\sic\install\sic-profile.ps1"
+```
+
+#### Helper Functions
+
+| Function | Usage | Description |
+|----------|-------|-------------|
+| `sic-scan` | `sic-scan -Target 192.168.1.1 [-Type web]` | Submit a smart scan via `/api/intelligence/smart-scan` |
+| `sic-health` | `sic-health` | GET `/health` — full server health and telemetry |
+| `sic-incidents` | `sic-incidents` | GET `/api/incidents` — list open incidents |
+| `sic-fix` | `sic-fix <finding-id>` | POST `/api/command` — AI-assisted remediation for a finding |
+| `sic-version` | `sic-version` | Show server version and status (from `/health`) |
+
+All helpers target `http://127.0.0.1:9888` by default (the `SIC_PORT` default). Override by setting `$SIC_BASE` before dot-sourcing.
+
+
 ### AI Client Integration
 
 **Claude Desktop / Cursor:**

@@ -17525,14 +17525,39 @@ btn.addEventListener('click',async()=>{
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
+def _darken_hex(hex_color: str, factor: float = 0.7) -> str:
+    """Return a darkened version of a #RRGGBB hex color.
+
+    Multiplies each channel by *factor* (clamped 0-255).
+    Returns the original string unchanged if it is not a valid 6-digit hex.
+    """
+    import re as _re
+    m = _re.fullmatch(r"#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})", hex_color.strip())
+    if not m:
+        return hex_color
+    r, g, b = (int(m.group(i), 16) for i in (1, 2, 3))
+    r = min(255, max(0, int(r * factor)))
+    g = min(255, max(0, int(g * factor)))
+    b = min(255, max(0, int(b * factor)))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 @app.route("/dashboard/style.css")
 def serve_dashboard_css():
     """Serve dashboard CSS with runtime accent color injection."""
     import pathlib
+    import re as _re_dim
     css_path = pathlib.Path(__file__).parent / "dashboard" / "style.css"
     if not css_path.exists():
         return "/* SIC dashboard/style.css not found */", 404, {"Content-Type": "text/css"}
     css = css_path.read_text(encoding="utf-8")
     accent = SIC_CONFIG.get("ui", {}).get("accentColor", "#e94560")
     css = css.replace("--sic-accent: #e94560", f"--sic-accent: {accent}")
+    # Derive --sic-accent-dim (~30% darker) from the configured accent.
+    # Fall back to the hardcoded default if accent is not a valid 6-digit hex.
+    if _re_dim.fullmatch(r"#[0-9A-Fa-f]{6}", accent.strip()):
+        accent_dim = _darken_hex(accent)
+    else:
+        accent_dim = "#b02040"
+    css = css.replace("--sic-accent-dim: #b02040", f"--sic-accent-dim: {accent_dim}")
     return css, 200, {"Content-Type": "text/css; charset=utf-8"}

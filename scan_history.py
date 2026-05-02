@@ -281,7 +281,16 @@ def get_scan_route(scan_id: str):
 
 @scan_history_bp.get("/export/<scan_id>")
 def export_scan_route(scan_id: str):
-    """GET /api/export/<scan_id>?format=json|csv — download scan data."""
+    """GET /api/export/<scan_id>?format=json|csv|pdf — download scan data.
+
+    Supported formats:
+      - json (default) — full scan record as indented JSON.
+      - csv — findings flattened to CSV rows.
+      - pdf — paginated PDF report; requires team or studio tier
+        (feature gate: pdf_export).  Returns 402 if the current user's tier
+        does not include pdf_export.  Returns 501 if WeasyPrint and its native
+        Cairo/Pango dependencies are not installed on the server.
+    """
     _require_auth()
     scan = get_scan(scan_id)
     if scan is None:
@@ -331,15 +340,251 @@ def export_scan_route(scan_id: str):
             },
         )
 
-    # Default: JSON
-    body = json.dumps(scan, indent=2, default=str)
-    return Response(
-        body,
-        mimetype="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="scan-{scan_id}.json"'
-        },
-    )
+    if fmt == "pdf":
+        from feature_gates import feature_enabled  # noqa: PLC0415
+
+        if not feature_enabled("pdf_export"):
+            return (
+                jsonify(
+                    {
+                        "error": "pdf_export_requires_team_tier",
+                        "upgrade_url": "/billing",
+                    }
+                ),
+                402,
+            )
+
+        try:
+            from weasyprint import HTML  # noqa: PLC0415
+        except ImportError:
+            return (
+                jsonify(
+                    {
+                        "error": "pdf_export_unavailable",
+                        "message": "weasyprint not installed on server",
+                    }
+                ),
+                501,
+            )
+
+        findings_pdf: list = scan.get("findings") or []
+        findings_count: int = len(findings_pdf)
+
+        # Build findings table rows
+        finding_rows_html = ""
+        if findings_pdf:
+            all_cols: list[str] = sorted(
+                {k for f in findings_pdf if isinstance(f, dict) for k in f.keys()}
+            ) or ["value"]
+            header_cells = "".join(
+                f"<th>{col}</th>" for col in all_cols
+            )
+            body_rows = ""
+            for finding in findings_pdf:
+                if not isinstance(finding, dict):
+                    finding = {"value": finding}
+                cells = "".join(
+                    "<td>{}</td>".format(
+                        json.dumps(finding.get(col, ""), default=str)
+                        if isinstance(finding.get(col), (dict, list))
+                        else str(finding.get(col, ""))
+                    )
+                    for col in all_cols
+                )
+                body_rows += "<tr>{}</tr>".format(cells)
+            finding_rows_html = (
+                "<table>"
+                "<thead><tr>{}</tr></thead>"
+                "<tbody>{}</tbody>"
+                "</table>"
+            ).format(header_cells, body_rows)
+        else:
+            finding_rows_html = "<p class='no-findings'>No findings recorded.</p>"
+
+        html_str = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #1a1a1a;
+    background: #ffffff;
+    padding: 32px 40px;
+  }}
+  .report-header {{
+    background: #0a0a0a;
+    color: #ffffff;
+    padding: 20px 24px;
+    border-left: 6px solid #e94560;
+    margin-bottom: 28px;
+  }}
+  .report-header h1 {{
+    font-size: 18px;
+    font-weight: 700;
+    color: #e94560;
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }}
+  .report-header .subtitle {{
+    font-size: 11px;
+    color: #aaaaaa;
+  }}
+  .meta-grid {{
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 28px;
+  }}
+  .meta-row {{
+    display: table-row;
+  }}
+  .meta-label {{
+    display: table-cell;
+    font-weight: 700;
+    padding: 5px 12px 5px 0;
+    width: 160px;
+    color: #555555;
+    vertical-align: top;
+  }}
+  .meta-value {{
+    display: table-cell;
+    padding: 5px 0;
+    color: #1a1a1a;
+    vertical-align: top;
+  }}
+  .section-title {{
+    font-size: 13px;
+    font-weight: 700;
+    color: #0a0a0a;
+    border-bottom: 2px solid #e94560;
+    padding-bottom: 4px;
+    margin-bottom: 14px;
+  }}
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }}
+  thead tr {{
+    background: #0a0a0a;
+    color: #ffffff;
+  }}
+  thead th {{
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }}
+  tbody tr:nth-child(even) {{
+    background: #f7f7f7;
+  }}
+  tbody tr:nth-child(odd) {{
+    background: #ffffff;
+  }}
+  tbody td {{
+    padding: 6px 10px;
+    border-bottom: 1px solid #eeeeee;
+    vertical-align: top;
+    word-break: break-word;
+  }}
+  .no-findings {{
+    color: #888888;
+    font-style: italic;
+    margin-top: 8px;
+  }}
+  .footer {{
+    margin-top: 32px;
+    font-size: 9px;
+    color: #aaaaaa;
+    border-top: 1px solid #eeeeee;
+    padding-top: 10px;
+  }}
+</style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>SIC Scan Report</h1>
+    <div class="subtitle">Security Intelligence Center &mdash; Automated Export</div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-row">
+      <div class="meta-label">Scan ID</div>
+      <div class="meta-value">{scan_id}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Target</div>
+      <div class="meta-value">{target}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Type</div>
+      <div class="meta-value">{scan_type}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Status</div>
+      <div class="meta-value">{status}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Started</div>
+      <div class="meta-value">{started_at}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Finished</div>
+      <div class="meta-value">{finished_at}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Duration (s)</div>
+      <div class="meta-value">{duration_s}</div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Findings</div>
+      <div class="meta-value">{findings_count}</div>
+    </div>
+  </div>
+
+  <div class="section-title">Findings</div>
+  {finding_rows}
+
+  <div class="footer">
+    Generated by SIC &mdash; {generated_at}
+  </div>
+</body>
+</html>""".format(
+            scan_id=scan_id,
+            target=str(scan.get("target", "")),
+            scan_type=str(scan.get("scan_type", "")),
+            status=str(scan.get("status", "")),
+            started_at=str(scan.get("started_at", "")),
+            finished_at=str(scan.get("finished_at", "")),
+            duration_s=str(scan.get("duration_s", "")),
+            findings_count=findings_count,
+            finding_rows=finding_rows_html,
+            generated_at=_iso_now(),
+        )
+
+        pdf_bytes: bytes = HTML(string=html_str).write_pdf()
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="scan-{scan_id}.pdf"'
+            },
+        )
+
+    if fmt == "json":
+        body = json.dumps(scan, indent=2, default=str)
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="scan-{scan_id}.json"'
+            },
+        )
+
+    return jsonify({"error": "invalid_format", "allowed": ["json", "csv", "pdf"]}), 400
 
 
 @scan_history_bp.get("/scans/diff")
