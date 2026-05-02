@@ -37,6 +37,13 @@ mitmproxy>=9.0.0,<11.0.0        # HTTP proxy (mitmproxy imports)
 pwntools>=4.10.0,<5.0.0         # Binary exploitation (from pwn import *)
 angr>=9.2.0,<10.0.0             # Binary analysis (import angr)
 bcrypt==4.0.1                   # Pin bcrypt version for passlib compatibility (fixes pwntools dependency issue)
+stripe>=8.0.0,<9.0.0           # Stripe billing SDK (billing/ module)
+
+# ============================================================================
+# SSO (SAML 2.0 + OIDC — optional, lazy-imported by sso/ package)
+# ============================================================================
+python3-saml>=1.16.0            # SAML 2.0 SP (sso/saml_handler.py — lazy import)
+authlib>=1.3.0                  # OIDC client (sso/oidc_handler.py — lazy import)
 
 # ============================================================================
 # EXTERNAL SECURITY TOOLS (150+ Tools - Install separately)

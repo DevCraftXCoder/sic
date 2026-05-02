@@ -5,6 +5,10 @@ Provides:
   - record_scan_start / record_scan_complete — write helpers for scan runners
   - get_scan / list_scans — read helpers
   - Blueprint routes: GET /api/scans, /api/scans/<id>, /api/export/<id>
+
+Retention gating: list_scans_route enforces scan_history_days per tier via
+feature_gates.get_tier_limit / feature_gates.current_user_tier.  list_scans()
+itself is ungated so internal callers are unaffected.
 """
 
 import csv
@@ -13,7 +17,7 @@ import json
 import logging
 import secrets
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Blueprint, Response, abort, jsonify, request
@@ -171,10 +175,13 @@ def list_scans(
     scan_type: str | None,
     status: str | None,
     limit: int,
+    oldest_allowed: str | None = None,
 ) -> tuple[list[dict], str | None]:
     """Cursor-paginated scan list.
 
     Cursor is a started_at ISO string (exclusive lower bound for DESC order).
+    oldest_allowed, when provided, is an ISO string acting as an inclusive lower
+    bound — scans older than this value are excluded (retention gate).
     Returns (rows, next_cursor).
     """
     _init_db()
@@ -184,6 +191,9 @@ def list_scans(
     if cursor:
         where.append("started_at < ?")
         params.append(cursor)
+    if oldest_allowed:
+        where.append("started_at >= ?")
+        params.append(oldest_allowed)
     if scan_type:
         where.append("scan_type = ?")
         params.append(scan_type)
@@ -229,7 +239,7 @@ def _require_auth():
 
 @scan_history_bp.get("/scans")
 def list_scans_route():
-    """GET /api/scans — paginated scan history."""
+    """GET /api/scans — paginated scan history (retention-gated by tier)."""
     _require_auth()
     cursor = request.args.get("cursor")
     scan_type = request.args.get("type")
@@ -238,7 +248,23 @@ def list_scans_route():
         limit = int(request.args.get("limit", 20))
     except (TypeError, ValueError):
         limit = 20
-    rows, next_cursor = list_scans(cursor, scan_type, status, limit)
+
+    # Tier-based retention gate: clamp cursor to the oldest allowed scan date.
+    try:
+        from feature_gates import current_user_tier, get_tier_limit  # noqa: PLC0415
+        retention_days: int = get_tier_limit(current_user_tier(), "scan_history_days")
+    except ImportError:
+        retention_days = 7  # fail-safe: community default
+
+    retention_cutoff: str | None = None
+    if retention_days != -1:  # -1 = unlimited (studio)
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        retention_cutoff = cutoff_dt.isoformat()
+        # If the caller's cursor is older than the cutoff, clamp it.
+        if cursor and cursor < retention_cutoff:
+            cursor = None
+
+    rows, next_cursor = list_scans(cursor, scan_type, status, limit, oldest_allowed=retention_cutoff)
     return jsonify({"scans": rows, "next_cursor": next_cursor})
 
 

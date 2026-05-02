@@ -145,6 +145,25 @@ except ImportError as _bp_err:
     logger.warning("SIC P0 blueprints not loaded: %s", _bp_err)
     get_session_email = None  # type: ignore[assignment]
 
+# ----------------------------------------------------------------------------
+# SIC Phase 5 — register billing + sso blueprints (revenue layer)
+# ----------------------------------------------------------------------------
+try:
+    from billing import billing_bp, init_db as billing_init_db  # noqa: PLC0415
+    billing_init_db()
+    app.register_blueprint(billing_bp)
+    logger.info("SIC Phase 5 blueprint registered: billing")
+except ImportError as _bp_err:
+    logger.warning("SIC billing blueprint not loaded: %s", _bp_err)
+
+try:
+    from sso import sso_bp, init_db as sso_init_db  # noqa: PLC0415
+    sso_init_db()
+    app.register_blueprint(sso_bp)
+    logger.info("SIC Phase 5 blueprint registered: sso")
+except ImportError as _bp_err:
+    logger.warning("SIC sso blueprint not loaded: %s", _bp_err)
+
 
 @app.route("/dashboard/", defaults={"filename": "index.html"})
 @app.route("/dashboard/<path:filename>")
