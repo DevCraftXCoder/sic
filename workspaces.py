@@ -32,6 +32,7 @@ import hmac
 import logging
 import os
 import secrets
+import time
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -577,3 +578,219 @@ def set_current_workspace_route():
         path="/",
     )
     return resp
+
+
+# ---------------------------------------------------------------------------
+# #22 Per-Service API Tokens + #25 Token-Expiry Warnings
+# ---------------------------------------------------------------------------
+# Schema: api_tokens table added via workspaces_init_db migration below.
+# Routes (all require workspace membership; create/revoke require admin):
+#   POST   /api/workspaces/<id>/tokens               — create token
+#   GET    /api/workspaces/<id>/tokens               — list tokens
+#   DELETE /api/workspaces/<id>/tokens/<token_id>    — revoke token
+#   GET    /api/workspaces/<id>/tokens/expiring-soon — tokens expiring in ≤7 days
+
+
+
+def _ensure_tokens_table() -> None:
+    """Idempotent creation of the api_tokens table."""
+    with _connect() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id           TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                service_name TEXT NOT NULL,
+                token_hash   TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL,
+                created_by   TEXT NOT NULL,
+                created_at   TEXT NOT NULL,
+                expires_at   TEXT,
+                last_used_at TEXT,
+                revoked      INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_api_tokens_workspace"
+            " ON api_tokens(workspace_id)"
+        )
+        conn.commit()
+
+
+def _hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@workspaces_bp.post("/workspaces/<workspace_id>/tokens")
+def create_token_route(workspace_id: str):
+    """POST /api/workspaces/<id>/tokens — issue a scoped API token (admin only).
+
+    Body: {"service_name": "ci-pipeline", "expires_in_days": 90}
+    Returns: {"token": "sic_...", "id": "...", "expires_at": "..."}
+    The raw token is returned once only — store it securely.
+    """
+    _ensure_tokens_table()
+    email = _require_auth()
+    _require_admin(workspace_id, email)
+
+    body = request.get_json(silent=True) or {}
+    service_name = (body.get("service_name") or "").strip()
+    if not service_name:
+        return jsonify({"error": "service_name_required"}), 400
+
+    expires_in_days = body.get("expires_in_days")
+    expires_at = None
+    if expires_in_days is not None:
+        try:
+            days = int(expires_in_days)
+            if days <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return jsonify({"error": "expires_in_days_must_be_positive_integer"}), 400
+        expires_ts = time.time() + days * 86400
+        expires_at = _iso_now_from_ts(expires_ts)
+
+    raw = "sic_" + secrets.token_urlsafe(32)
+    token_id = _nanoid()
+    prefix = raw[:12]
+
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO api_tokens"
+            " (id, workspace_id, service_name, token_hash, token_prefix,"
+            "  created_by, created_at, expires_at, revoked)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            (token_id, workspace_id, service_name, _hash_token(raw),
+             prefix, email, _iso_now(), expires_at),
+        )
+        conn.commit()
+
+    return jsonify({
+        "token": raw,
+        "id": token_id,
+        "service_name": service_name,
+        "prefix": prefix,
+        "created_at": _iso_now(),
+        "expires_at": expires_at,
+        "note": "Store this token securely — it will not be shown again.",
+    }), 201
+
+
+@workspaces_bp.get("/workspaces/<workspace_id>/tokens")
+def list_tokens_route(workspace_id: str):
+    """GET /api/workspaces/<id>/tokens — list active (non-revoked) tokens."""
+    _ensure_tokens_table()
+    email = _require_auth()
+    _require_member(workspace_id, email)
+
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, service_name, token_prefix, created_by, created_at,"
+            "       expires_at, last_used_at"
+            " FROM api_tokens"
+            " WHERE workspace_id = ? AND revoked = 0"
+            " ORDER BY created_at DESC",
+            (workspace_id,),
+        ).fetchall()
+
+    tokens = []
+    now_ts = time.time()
+    for r in rows:
+        d = dict(r)
+        d["expired"] = bool(
+            d["expires_at"] and _parse_iso_ts(d["expires_at"]) < now_ts
+        )
+        tokens.append(d)
+
+    return jsonify({"tokens": tokens, "total": len(tokens)})
+
+
+@workspaces_bp.delete("/workspaces/<workspace_id>/tokens/<token_id>")
+def revoke_token_route(workspace_id: str, token_id: str):
+    """DELETE /api/workspaces/<id>/tokens/<token_id> — revoke token (admin only)."""
+    _ensure_tokens_table()
+    email = _require_auth()
+    _require_admin(workspace_id, email)
+
+    with _connect() as conn:
+        result = conn.execute(
+            "UPDATE api_tokens SET revoked = 1"
+            " WHERE id = ? AND workspace_id = ? AND revoked = 0",
+            (token_id, workspace_id),
+        )
+        conn.commit()
+
+    if result.rowcount == 0:
+        return jsonify({"error": "token_not_found_or_already_revoked"}), 404
+
+    return jsonify({"revoked": True, "id": token_id})
+
+
+@workspaces_bp.get("/workspaces/<workspace_id>/tokens/expiring-soon")
+def expiring_tokens_route(workspace_id: str):
+    """GET /api/workspaces/<id>/tokens/expiring-soon — tokens expiring within 7 days.
+
+    Used by #25 to surface expiry warnings in the dashboard and trigger webhook
+    alerts. Excludes already-expired and revoked tokens.
+    """
+    _ensure_tokens_table()
+    email = _require_auth()
+    _require_member(workspace_id, email)
+
+    warning_window = 7 * 86400
+    now_ts = time.time()
+    cutoff_ts = now_ts + warning_window
+
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, service_name, token_prefix, created_by, created_at, expires_at"
+            " FROM api_tokens"
+            " WHERE workspace_id = ? AND revoked = 0 AND expires_at IS NOT NULL"
+            " ORDER BY expires_at ASC",
+            (workspace_id,),
+        ).fetchall()
+
+    expiring = []
+    for r in rows:
+        d = dict(r)
+        exp_ts = _parse_iso_ts(d["expires_at"])
+        if now_ts < exp_ts <= cutoff_ts:
+            d["days_remaining"] = max(0, int((exp_ts - now_ts) / 86400))
+            d["warning"] = True
+            expiring.append(d)
+
+    # Fire webhook alert if tokens are expiring and scan_alerts is available
+    if expiring:
+        try:
+            from scan_alerts import send_alert  # noqa: PLC0415
+            for t in expiring:
+                send_alert(
+                    event="token_expiring_soon",
+                    data={
+                        "workspace_id": workspace_id,
+                        "token_id": t["id"],
+                        "service_name": t["service_name"],
+                        "days_remaining": t["days_remaining"],
+                        "expires_at": t["expires_at"],
+                    },
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    return jsonify({
+        "expiring_soon": expiring,
+        "total": len(expiring),
+        "warning_window_days": 7,
+    })
+
+
+def _iso_now_from_ts(ts: float) -> str:
+    from datetime import datetime, timezone  # noqa: PLC0415
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
+def _parse_iso_ts(iso: str) -> float:
+    from datetime import datetime, timezone  # noqa: PLC0415
+    try:
+        return datetime.fromisoformat(iso).replace(tzinfo=timezone.utc).timestamp()
+    except (ValueError, AttributeError):
+        return 0.0
