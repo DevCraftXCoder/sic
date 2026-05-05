@@ -8896,6 +8896,8 @@ _TARGET_RE = _re.compile(r"^[a-zA-Z0-9.\-_:/\[\]]+$")
 _PATH_RE = _re.compile(r"^[a-zA-Z0-9.\-_:/\\]+$")
 # Allows a port spec like "80", "1-1024", or "80,443".
 _PORT_RE = _re.compile(r"^[0-9,\-]+$")
+# Shell metacharacters that must never appear in passthrough args.
+_SHELL_META_RE = _re.compile(r"[;|&`$<>(){}\[\]\]")
 
 
 def _validate_target(value: str, max_len: int = 256) -> bool:
@@ -10699,7 +10701,20 @@ def nuclei():
             }
             result = execute_command_with_recovery("nuclei", command, tool_params)
         else:
-            result = execute_command(command)
+            if not _validate_target(target, max_len=2048):
+                return jsonify({"error": "invalid target"}), 400
+            if additional_args and _SHELL_META_RE.search(additional_args):
+                return jsonify({"error": "invalid additional_args"}), 400
+            cmd: list[str] = ["nuclei", "-u", target]
+            if severity:
+                cmd += ["-severity", severity]
+            if tags:
+                cmd += ["-tags", tags]
+            if template:
+                cmd += ["-t", template]
+            if additional_args:
+                cmd += additional_args.split()
+            result = execute_command(cmd)
 
         logger.info(f"📊 Nuclei scan completed for {target}")
         return jsonify(result)
@@ -10730,25 +10745,27 @@ def prowler():
         # Ensure output directory exists
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        command = f"prowler {provider}"
+        allowed_providers = {"aws", "azure", "gcp", "kubernetes"}
+        if provider not in allowed_providers:
+            return jsonify({"error": "invalid provider"}), 400
+        if not _validate_path(output_dir):
+            return jsonify({"error": "invalid output_dir"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["prowler", provider]
         if profile:
-            command += f" --profile {profile}"
-
+            cmd += ["--profile", profile]
         if region:
-            command += f" --region {region}"
-
+            cmd += ["--region", region]
         if checks:
-            command += f" --checks {checks}"
-
-        command += f" --output-directory {output_dir}"
-        command += f" --output-format {output_format}"
-
+            cmd += ["--checks", checks]
+        cmd += ["--output-directory", output_dir, "--output-format", output_format]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"☁️  Starting Prowler {provider} security assessment")
-        result = execute_command(command)
+        result = execute_command(cmd)
         result["output_directory"] = output_dir
         logger.info(f"📊 Prowler assessment completed")
         return jsonify(result)
@@ -10776,22 +10793,28 @@ def trivy():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"trivy {scan_type} {target}"
+        allowed_scan_types = {"image", "fs", "repo", "config", "rootfs", "sbom"}
+        if scan_type not in allowed_scan_types:
+            return jsonify({"error": "invalid scan_type"}), 400
+        if not _validate_target(target, max_len=512):
+            return jsonify({"error": "invalid target"}), 400
+        if output_file and not _validate_path(output_file):
+            return jsonify({"error": "invalid output_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["trivy", scan_type, target]
         if output_format:
-            command += f" --format {output_format}"
-
+            cmd += ["--format", output_format]
         if severity:
-            command += f" --severity {severity}"
-
+            cmd += ["--severity", severity]
         if output_file:
-            command += f" --output {output_file}"
-
+            cmd += ["--output", output_file]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting Trivy {scan_type} scan: {target}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         if output_file:
             result["output_file"] = output_file
         logger.info(f"📊 Trivy scan completed for {target}")
@@ -10821,24 +10844,27 @@ def scout_suite():
         # Ensure report directory exists
         Path(report_dir).mkdir(parents=True, exist_ok=True)
 
-        command = f"scout {provider}"
+        allowed_providers = {"aws", "azure", "gcp", "aliyun", "oci"}
+        if provider not in allowed_providers:
+            return jsonify({"error": "invalid provider"}), 400
+        if not _validate_path(report_dir):
+            return jsonify({"error": "invalid report_dir"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["scout", provider]
         if profile and provider == "aws":
-            command += f" --profile {profile}"
-
+            cmd += ["--profile", profile]
         if services:
-            command += f" --services {services}"
-
+            cmd += ["--services", services]
         if exceptions:
-            command += f" --exceptions {exceptions}"
-
-        command += f" --report-dir {report_dir}"
-
+            cmd += ["--exceptions", exceptions]
+        cmd += ["--report-dir", report_dir]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"☁️  Starting Scout Suite {provider} assessment")
-        result = execute_command(command)
+        result = execute_command(cmd)
         result["report_directory"] = report_dir
         logger.info(f"📊 Scout Suite assessment completed")
         return jsonify(result)
@@ -10860,19 +10886,25 @@ def cloudmapper():
             logger.warning("☁️  CloudMapper called without account parameter")
             return jsonify({"error": "Account parameter is required for most actions"}), 400
 
-        command = f"cloudmapper {action}"
+        if action and _SHELL_META_RE.search(action):
+            return jsonify({"error": "invalid action"}), 400
+        if account and _SHELL_META_RE.search(account):
+            return jsonify({"error": "invalid account"}), 400
+        if config and not _validate_path(config):
+            return jsonify({"error": "invalid config"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["cloudmapper", action]
         if account:
-            command += f" --account {account}"
-
+            cmd += ["--account", account]
         if config:
-            command += f" --config {config}"
-
+            cmd += ["--config", config]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"☁️  Starting CloudMapper {action}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 CloudMapper {action} completed")
         return jsonify(result)
     except Exception as e:
@@ -10911,13 +10943,29 @@ def pacu():
         with open(command_file, "w") as f:
             f.write("\n".join(commands))
 
-        command = f"pacu < {command_file}"
-
-        if additional_args:
-            command += f" {additional_args}"
-
-        logger.info(f"☁️  Starting Pacu AWS exploitation")
-        result = execute_command(command)
+        import subprocess as _subprocess
+        # Pacu requires stdin from command file; validate inputs before writing
+        if session_name and _SHELL_META_RE.search(session_name):
+            return jsonify({"error": "invalid session_name"}), 400
+        if regions and _SHELL_META_RE.search(regions):
+            return jsonify({"error": "invalid regions"}), 400
+        # Validate each module name individually
+        for _mod in (modules or "").split(","):
+            _mod = _mod.strip()
+            if _mod and _SHELL_META_RE.search(_mod):
+                return jsonify({"error": f"invalid module name: {_mod}"}), 400
+        _proc = _subprocess.run(
+            ["pacu"],
+            input=open(command_file, "rb").read(),
+            capture_output=True,
+            timeout=300,
+        )
+        result = {
+            "success": _proc.returncode == 0,
+            "stdout": _proc.stdout.decode(errors="replace"),
+            "stderr": _proc.stderr.decode(errors="replace"),
+            "return_code": _proc.returncode,
+        }
 
         # Cleanup
         try:
@@ -10944,31 +10992,38 @@ def kube_hunter():
         report = params.get("report", "json")
         additional_args = params.get("additional_args", "")
 
-        command = "kube-hunter"
+        _kh_tgt = target or remote or ""
+        if _kh_tgt and not _validate_target(_kh_tgt):
+            return jsonify({"error": "invalid target/remote"}), 400
+        if cidr and not _validate_target(cidr):
+            return jsonify({"error": "invalid cidr"}), 400
+        if interface and _SHELL_META_RE.search(interface):
+            return jsonify({"error": "invalid interface"}), 400
+        if report and _SHELL_META_RE.search(report):
+            return jsonify({"error": "invalid report format"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["kube-hunter"]
         if target:
-            command += f" --remote {target}"
+            cmd += ["--remote", target]
         elif remote:
-            command += f" --remote {remote}"
+            cmd += ["--remote", remote]
         elif cidr:
-            command += f" --cidr {cidr}"
+            cmd += ["--cidr", cidr]
         elif interface:
-            command += f" --interface {interface}"
+            cmd += ["--interface", interface]
         else:
-            # Default to pod scanning
-            command += " --pod"
-
+            cmd.append("--pod")
         if active:
-            command += " --active"
-
+            cmd.append("--active")
         if report:
-            command += f" --report {report}"
-
+            cmd += ["--report", report]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"☁️  Starting kube-hunter Kubernetes scan")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 kube-hunter scan completed")
         return jsonify(result)
     except Exception as e:
@@ -10986,25 +11041,32 @@ def kube_bench():
         output_format = params.get("output_format", "json")
         additional_args = params.get("additional_args", "")
 
-        command = "kube-bench"
+        allowed_targets = {"master", "node", "etcd", "policies", "controlplane", "managedservices"}
+        _target_list = [t.strip() for t in (targets or "").split(",") if t.strip()]
+        if any(t not in allowed_targets for t in _target_list):
+            return jsonify({"error": "invalid targets"}), 400
+        if version and _SHELL_META_RE.search(version):
+            return jsonify({"error": "invalid version"}), 400
+        if config_dir and not _validate_path(config_dir):
+            return jsonify({"error": "invalid config_dir"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["kube-bench"]
         if targets:
-            command += f" --targets {targets}"
-
+            cmd += ["--targets", targets]
         if version:
-            command += f" --version {version}"
-
+            cmd += ["--version", version]
         if config_dir:
-            command += f" --config-dir {config_dir}"
-
+            cmd += ["--config-dir", config_dir]
         if output_format:
-            command += f" --outputfile /tmp/kube-bench-results.{output_format} --json"
-
+            _out_path = f"/tmp/kube-bench-results.{output_format}"
+            cmd += ["--outputfile", _out_path, "--json"]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"☁️  Starting kube-bench CIS benchmark")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 kube-bench benchmark completed")
         return jsonify(result)
     except Exception as e:
@@ -11021,22 +11083,27 @@ def docker_bench_security():
         output_file = params.get("output_file", "/tmp/docker-bench-results.json")
         additional_args = params.get("additional_args", "")
 
-        command = "docker-bench-security"
+        if checks and _SHELL_META_RE.search(checks):
+            return jsonify({"error": "invalid checks"}), 400
+        if exclude and _SHELL_META_RE.search(exclude):
+            return jsonify({"error": "invalid exclude"}), 400
+        if output_file and not _validate_path(output_file):
+            return jsonify({"error": "invalid output_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["docker-bench-security"]
         if checks:
-            command += f" -c {checks}"
-
+            cmd += ["-c", checks]
         if exclude:
-            command += f" -e {exclude}"
-
+            cmd += ["-e", exclude]
         if output_file:
-            command += f" -l {output_file}"
-
+            cmd += ["-l", output_file]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🐳 Starting Docker Bench Security assessment")
-        result = execute_command(command)
+        result = execute_command(cmd)
         result["output_file"] = output_file
         logger.info(f"📊 Docker Bench Security completed")
         return jsonify(result)
@@ -13035,13 +13102,23 @@ def feroxbuster():
                 "error": "URL parameter is required"
             }), 400
 
-        command = f"feroxbuster -u {url} -w {wordlist} -t {threads}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        try:
+            _threads = int(threads)
+        except (TypeError, ValueError):
+            return jsonify({"error": "threads must be an integer"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["feroxbuster", "-u", url, "-w", wordlist, "-t", str(_threads)]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting Feroxbuster scan: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Feroxbuster scan completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13065,15 +13142,20 @@ def dotdotpwn():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"dotdotpwn -m {module} -h {target}"
+        allowed_modules = {"http", "http-url", "ftp", "tftp", "smtp", "payload"}
+        if module not in allowed_modules:
+            return jsonify({"error": "invalid module"}), 400
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["dotdotpwn", "-m", module, "-h", target, "-b"]
         if additional_args:
-            command += f" {additional_args}"
-
-        command += " -b"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting DotDotPwn scan: {target}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 DotDotPwn scan completed for {target}")
         return jsonify(result)
     except Exception as e:
@@ -13097,16 +13179,21 @@ def xsser():
                 "error": "URL parameter is required"
             }), 400
 
-        command = f"xsser --url '{url}'"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if params_str and _SHELL_META_RE.search(params_str):
+            return jsonify({"error": "invalid params"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["xsser", "--url", url]
         if params_str:
-            command += f" --param='{params_str}'"
-
+            cmd += [f"--param={params_str}"]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting XSSer scan: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 XSSer scan completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13130,13 +13217,19 @@ def wfuzz():
                 "error": "URL parameter is required"
             }), 400
 
-        command = f"wfuzz -w {wordlist} '{url}'"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["wfuzz", "-w", wordlist, url]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting Wfuzz scan: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Wfuzz scan completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13165,16 +13258,27 @@ def dirsearch():
             logger.warning("🌐 Dirsearch called without URL parameter")
             return jsonify({"error": "URL parameter is required"}), 400
 
-        command = f"dirsearch -u {url} -e {extensions} -w {wordlist} -t {threads}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if extensions and _SHELL_META_RE.search(extensions):
+            return jsonify({"error": "invalid extensions"}), 400
+        try:
+            _threads = int(threads)
+        except (TypeError, ValueError):
+            return jsonify({"error": "threads must be an integer"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["dirsearch", "-u", url, "-e", extensions, "-w", wordlist, "-t", str(_threads)]
         if recursive:
-            command += " -r"
-
+            cmd.append("-r")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"📁 Starting Dirsearch scan: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Dirsearch scan completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13197,22 +13301,27 @@ def katana():
             logger.warning("🌐 Katana called without URL parameter")
             return jsonify({"error": "URL parameter is required"}), 400
 
-        command = f"katana -u {url} -d {depth}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        try:
+            _depth = int(depth)
+        except (TypeError, ValueError):
+            return jsonify({"error": "depth must be an integer"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["katana", "-u", url, "-d", str(_depth)]
         if js_crawl:
-            command += " -jc"
-
+            cmd.append("-jc")
         if form_extraction:
-            command += " -fx"
-
+            cmd.append("-fx")
         if output_format == "json":
-            command += " -jsonl"
-
+            cmd.append("-jsonl")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"⚔️  Starting Katana crawl: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Katana crawl completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13234,22 +13343,27 @@ def gau():
             logger.warning("🌐 Gau called without domain parameter")
             return jsonify({"error": "Domain parameter is required"}), 400
 
-        command = f"gau {domain}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        if providers and _SHELL_META_RE.search(providers):
+            return jsonify({"error": "invalid providers"}), 400
+        if blacklist and _SHELL_META_RE.search(blacklist):
+            return jsonify({"error": "invalid blacklist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["gau", domain]
         if providers != "wayback,commoncrawl,otx,urlscan":
-            command += f" --providers {providers}"
-
+            cmd += ["--providers", providers]
         if include_subs:
-            command += " --subs"
-
+            cmd.append("--subs")
         if blacklist:
-            command += f" --blacklist {blacklist}"
-
+            cmd += ["--blacklist", blacklist]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"📡 Starting Gau URL discovery: {domain}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Gau URL discovery completed for {domain}")
         return jsonify(result)
     except Exception as e:
@@ -13270,19 +13384,21 @@ def waybackurls():
             logger.warning("🌐 Waybackurls called without domain parameter")
             return jsonify({"error": "Domain parameter is required"}), 400
 
-        command = f"waybackurls {domain}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["waybackurls", domain]
         if get_versions:
-            command += " --get-versions"
-
+            cmd.append("--get-versions")
         if no_subs:
-            command += " --no-subs"
-
+            cmd.append("--no-subs")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🕰️  Starting Waybackurls discovery: {domain}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Waybackurls discovery completed for {domain}")
         return jsonify(result)
     except Exception as e:
@@ -13306,22 +13422,33 @@ def arjun():
             logger.warning("🌐 Arjun called without URL parameter")
             return jsonify({"error": "URL parameter is required"}), 400
 
-        command = f"arjun -u {url} -m {method} -t {threads}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        allowed_methods = {"GET", "POST", "XML", "JSON"}
+        if method.upper() not in allowed_methods:
+            return jsonify({"error": "invalid method"}), 400
+        try:
+            _threads = int(threads)
+            _delay = int(delay)
+        except (TypeError, ValueError):
+            return jsonify({"error": "threads and delay must be integers"}), 400
+        if wordlist and not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["arjun", "-u", url, "-m", method.upper(), "-t", str(_threads)]
         if wordlist:
-            command += f" -w {wordlist}"
-
-        if delay > 0:
-            command += f" -d {delay}"
-
+            cmd += ["-w", wordlist]
+        if _delay > 0:
+            cmd += ["-d", str(_delay)]
         if stable:
-            command += " --stable"
-
+            cmd.append("--stable")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🎯 Starting Arjun parameter discovery: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Arjun parameter discovery completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13343,19 +13470,29 @@ def paramspider():
             logger.warning("🌐 ParamSpider called without domain parameter")
             return jsonify({"error": "Domain parameter is required"}), 400
 
-        command = f"paramspider -d {domain} -l {level}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        try:
+            _level = int(level)
+        except (TypeError, ValueError):
+            return jsonify({"error": "level must be an integer"}), 400
+        if exclude and _SHELL_META_RE.search(exclude):
+            return jsonify({"error": "invalid exclude"}), 400
+        if output and not _validate_path(output):
+            return jsonify({"error": "invalid output path"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["paramspider", "-d", domain, "-l", str(_level)]
         if exclude:
-            command += f" --exclude {exclude}"
-
+            cmd += ["--exclude", exclude]
         if output:
-            command += f" -o {output}"
-
+            cmd += ["-o", output]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🕷️  Starting ParamSpider mining: {domain}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 ParamSpider mining completed for {domain}")
         return jsonify(result)
     except Exception as e:
@@ -13378,19 +13515,30 @@ def x8():
             logger.warning("🌐 x8 called without URL parameter")
             return jsonify({"error": "URL parameter is required"}), 400
 
-        command = f"x8 -u {url} -w {wordlist} -X {method}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        allowed_methods = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+        if method.upper() not in allowed_methods:
+            return jsonify({"error": "invalid method"}), 400
+        if body and _SHELL_META_RE.search(body):
+            return jsonify({"error": "invalid body"}), 400
+        if headers and _SHELL_META_RE.search(headers):
+            return jsonify({"error": "invalid headers"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["x8", "-u", url, "-w", wordlist, "-X", method.upper()]
         if body:
-            command += f" -b '{body}'"
-
+            cmd += ["-b", body]
         if headers:
-            command += f" -H '{headers}'"
-
+            cmd += ["-H", headers]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting x8 parameter discovery: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 x8 parameter discovery completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13413,19 +13561,30 @@ def jaeles():
             logger.warning("🌐 Jaeles called without URL parameter")
             return jsonify({"error": "URL parameter is required"}), 400
 
-        command = f"jaeles scan -u {url} -c {threads} --timeout {timeout}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        try:
+            _threads = int(threads)
+            _timeout = int(timeout)
+        except (TypeError, ValueError):
+            return jsonify({"error": "threads and timeout must be integers"}), 400
+        if signatures and _SHELL_META_RE.search(signatures):
+            return jsonify({"error": "invalid signatures"}), 400
+        if config and not _validate_path(config):
+            return jsonify({"error": "invalid config"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["jaeles", "scan", "-u", url, "-c", str(_threads), "--timeout", str(_timeout)]
         if signatures:
-            command += f" -s {signatures}"
-
+            cmd += ["-s", signatures]
         if config:
-            command += f" --config {config}"
-
+            cmd += ["--config", config]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔬 Starting Jaeles vulnerability scan: {url}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Jaeles vulnerability scan completed for {url}")
         return jsonify(result)
     except Exception as e:
@@ -13449,28 +13608,30 @@ def dalfox():
             logger.warning("🌐 Dalfox called without URL parameter")
             return jsonify({"error": "URL parameter is required"}), 400
 
+        if url and not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if custom_payload and _SHELL_META_RE.search(custom_payload):
+            return jsonify({"error": "invalid custom_payload"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
+
         if pipe_mode:
-            command = "dalfox pipe"
+            cmd: list[str] = ["dalfox", "pipe"]
         else:
-            command = f"dalfox url {url}"
-
+            cmd = ["dalfox", "url", url]
         if blind:
-            command += " --blind"
-
+            cmd.append("--blind")
         if mining_dom:
-            command += " --mining-dom"
-
+            cmd.append("--mining-dom")
         if mining_dict:
-            command += " --mining-dict"
-
+            cmd.append("--mining-dict")
         if custom_payload:
-            command += f" --custom-payload '{custom_payload}'"
-
+            cmd += ["--custom-payload", custom_payload]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🎯 Starting Dalfox XSS scan: {url if url else 'pipe mode'}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Dalfox XSS scan completed")
         return jsonify(result)
     except Exception as e:
@@ -13496,31 +13657,33 @@ def httpx():
             logger.warning("🌐 httpx called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"httpx -l {target} -t {threads}"
+        if not _validate_path(target):
+            return jsonify({"error": "invalid target (must be a file path for -l flag)"}), 400
+        try:
+            _threads = int(threads)
+        except (TypeError, ValueError):
+            return jsonify({"error": "threads must be an integer"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["httpx", "-l", target, "-t", str(_threads)]
         if probe:
-            command += " -probe"
-
+            cmd.append("-probe")
         if tech_detect:
-            command += " -tech-detect"
-
+            cmd.append("-tech-detect")
         if status_code:
-            command += " -sc"
-
+            cmd.append("-sc")
         if content_length:
-            command += " -cl"
-
+            cmd.append("-cl")
         if title:
-            command += " -title"
-
+            cmd.append("-title")
         if web_server:
-            command += " -server"
-
+            cmd.append("-server")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🌍 Starting httpx probe: {target}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 httpx probe completed for {target}")
         return jsonify(result)
     except Exception as e:
@@ -13540,16 +13703,31 @@ def anew():
             logger.warning("📝 Anew called without input data")
             return jsonify({"error": "Input data is required"}), 400
 
-        if output_file:
-            command = f"echo '{input_data}' | anew {output_file}"
-        else:
-            command = f"echo '{input_data}' | anew"
+        if output_file and not _validate_path(output_file):
+            return jsonify({"error": "invalid output_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        import subprocess as _subprocess
+        _cmd: list[str] = ["anew"]
+        if output_file:
+            _cmd.append(output_file)
         if additional_args:
-            command += f" {additional_args}"
+            _cmd += additional_args.split()
+        _proc = _subprocess.run(
+            _cmd,
+            input=input_data.encode(errors="replace"),
+            capture_output=True,
+            timeout=30,
+        )
+        result = {
+            "success": _proc.returncode == 0,
+            "stdout": _proc.stdout.decode(errors="replace"),
+            "stderr": _proc.stderr.decode(errors="replace"),
+            "return_code": _proc.returncode,
+        }
 
         logger.info("📝 Starting anew data processing")
-        result = execute_command(command)
         logger.info("📊 anew data processing completed")
         return jsonify(result)
     except Exception as e:
@@ -13569,13 +13747,29 @@ def qsreplace():
             logger.warning("🌐 qsreplace called without URLs")
             return jsonify({"error": "URLs parameter is required"}), 400
 
-        command = f"echo '{urls}' | qsreplace '{replacement}'"
+        if _SHELL_META_RE.search(replacement):
+            return jsonify({"error": "invalid replacement value"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        import subprocess as _subprocess
+        _cmd: list[str] = ["qsreplace", replacement]
         if additional_args:
-            command += f" {additional_args}"
+            _cmd += additional_args.split()
+        _proc = _subprocess.run(
+            _cmd,
+            input=urls.encode(errors="replace"),
+            capture_output=True,
+            timeout=30,
+        )
+        result = {
+            "success": _proc.returncode == 0,
+            "stdout": _proc.stdout.decode(errors="replace"),
+            "stderr": _proc.stderr.decode(errors="replace"),
+            "return_code": _proc.returncode,
+        }
 
         logger.info("🔄 Starting qsreplace parameter replacement")
-        result = execute_command(command)
         logger.info("📊 qsreplace parameter replacement completed")
         return jsonify(result)
     except Exception as e:
@@ -13596,19 +13790,35 @@ def uro():
             logger.warning("🌐 uro called without URLs")
             return jsonify({"error": "URLs parameter is required"}), 400
 
-        command = f"echo '{urls}' | uro"
+        if whitelist and _SHELL_META_RE.search(whitelist):
+            return jsonify({"error": "invalid whitelist"}), 400
+        if blacklist and _SHELL_META_RE.search(blacklist):
+            return jsonify({"error": "invalid blacklist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        import subprocess as _subprocess
+        _cmd: list[str] = ["uro"]
         if whitelist:
-            command += f" --whitelist {whitelist}"
-
+            _cmd += ["--whitelist", whitelist]
         if blacklist:
-            command += f" --blacklist {blacklist}"
-
+            _cmd += ["--blacklist", blacklist]
         if additional_args:
-            command += f" {additional_args}"
+            _cmd += additional_args.split()
+        _proc = _subprocess.run(
+            _cmd,
+            input=urls.encode(errors="replace"),
+            capture_output=True,
+            timeout=30,
+        )
+        result = {
+            "success": _proc.returncode == 0,
+            "stdout": _proc.stdout.decode(errors="replace"),
+            "stderr": _proc.stderr.decode(errors="replace"),
+            "return_code": _proc.returncode,
+        }
 
         logger.info("🔍 Starting uro URL filtering")
-        result = execute_command(command)
         logger.info("📊 uro URL filtering completed")
         return jsonify(result)
     except Exception as e:
@@ -14681,27 +14891,40 @@ def zap():
                 "error": "Target parameter is required for scans"
             }), 400
 
+        if target and not _validate_target(target, max_len=2048):
+            return jsonify({"error": "invalid target"}), 400
+        if host and not _validate_target(host):
+            return jsonify({"error": "invalid host"}), 400
+        try:
+            _port = int(port)
+            if not (1 <= _port <= 65535):
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": "port must be an integer 1-65535"}), 400
+        if api_key and _SHELL_META_RE.search(api_key):
+            return jsonify({"error": "invalid api_key"}), 400
+        if output_file and not _validate_path(output_file):
+            return jsonify({"error": "invalid output_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
+
         if daemon:
-            command = f"zaproxy -daemon -host {host} -port {port}"
+            cmd: list[str] = ["zaproxy", "-daemon", "-host", host, "-port", str(_port)]
             if api_key:
-                command += f" -config api.key={api_key}"
+                cmd += ["-config", f"api.key={api_key}"]
         else:
-            command = f"zaproxy -cmd -quickurl {target}"
-
+            cmd = ["zaproxy", "-cmd", "-quickurl", target]
             if format_type:
-                command += f" -quickout {format_type}"
-
+                cmd += ["-quickout", format_type]
             if output_file:
-                command += f" -quickprogress -dir \"{output_file}\""
-
+                cmd += ["-quickprogress", "-dir", output_file]
             if api_key:
-                command += f" -config api.key={api_key}"
-
+                cmd += ["-config", f"api.key={api_key}"]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting ZAP scan: {target}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 ZAP scan completed for {target}")
         return jsonify(result)
     except Exception as e:
@@ -14724,13 +14947,17 @@ def wafw00f():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"wafw00f {target}"
+        if not _validate_target(target, max_len=2048):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["wafw00f", target]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🛡️ Starting Wafw00f WAF detection: {target}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Wafw00f completed for {target}")
         return jsonify(result)
     except Exception as e:
@@ -14754,16 +14981,21 @@ def fierce():
                 "error": "Domain parameter is required"
             }), 400
 
-        command = f"fierce --domain {domain}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        if dns_server and not _validate_target(dns_server):
+            return jsonify({"error": "invalid dns_server"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["fierce", "--domain", domain]
         if dns_server:
-            command += f" --dns-servers {dns_server}"
-
+            cmd += ["--dns-servers", dns_server]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting Fierce DNS recon: {domain}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Fierce completed for {domain}")
         return jsonify(result)
     except Exception as e:
@@ -14788,19 +15020,25 @@ def dnsenum():
                 "error": "Domain parameter is required"
             }), 400
 
-        command = f"dnsenum {domain}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        if dns_server and not _validate_target(dns_server):
+            return jsonify({"error": "invalid dns_server"}), 400
+        if wordlist and not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["dnsenum", domain]
         if dns_server:
-            command += f" --dnsserver {dns_server}"
-
+            cmd += ["--dnsserver", dns_server]
         if wordlist:
-            command += f" --file {wordlist}"
-
+            cmd += ["--file", wordlist]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔍 Starting DNSenum: {domain}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 DNSenum completed for {domain}")
         return jsonify(result)
     except Exception as e:
@@ -15206,8 +15444,24 @@ def api_fuzzer():
             for endpoint in endpoints:
                 for method in methods:
                     test_url = f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-                    command = f"curl -s -X {method} -w '%{{http_code}}|%{{size_download}}' '{test_url}'"
-                    result = execute_command(command, use_cache=False)
+                    import subprocess as _sp
+                    _allowed_methods = {"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"}
+                    if method.upper() not in _allowed_methods:
+                        continue
+                    if not _validate_target(test_url, max_len=2048):
+                        continue
+                    _cp = _sp.run(
+                        ["curl", "-s", "-X", method.upper(),
+                         "-w", "%{http_code}|%{size_download}",
+                         test_url],
+                        capture_output=True, timeout=30,
+                    )
+                    result = {
+                        "success": _cp.returncode == 0,
+                        "stdout": _cp.stdout.decode(errors="replace"),
+                        "stderr": _cp.stderr.decode(errors="replace"),
+                        "return_code": _cp.returncode,
+                    }
                     results.append({
                         "endpoint": endpoint,
                         "method": method,
@@ -15222,10 +15476,18 @@ def api_fuzzer():
             })
         else:
             # Discover endpoints using wordlist
-            command = f"ffuf -u {base_url}/FUZZ -w {wordlist} -mc 200,201,202,204,301,302,307,401,403,405 -t 50"
+            if not _validate_target(base_url, max_len=2048):
+                return jsonify({"error": "invalid base_url"}), 400
+            if not _validate_path(wordlist):
+                return jsonify({"error": "invalid wordlist"}), 400
+
+            cmd: list[str] = [
+                "ffuf", "-u", f"{base_url}/FUZZ", "-w", wordlist,
+                "-mc", "200,201,202,204,301,302,307,401,403,405", "-t", "50",
+            ]
 
             logger.info(f"🔍 Starting API endpoint discovery: {base_url}")
-            result = execute_command(command)
+            result = execute_command(cmd)
             logger.info(f"📊 API endpoint discovery completed")
 
             return jsonify({
@@ -15599,16 +15861,23 @@ def volatility3():
                 "error": "Plugin parameter is required"
             }), 400
 
-        command = f"vol.py -f {memory_file} {plugin}"
+        if not _validate_path(memory_file):
+            return jsonify({"error": "invalid memory_file"}), 400
+        if _SHELL_META_RE.search(plugin):
+            return jsonify({"error": "invalid plugin"}), 400
+        if output_file and not _validate_path(output_file):
+            return jsonify({"error": "invalid output_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["vol.py", "-f", memory_file, plugin]
         if output_file:
-            command += f" -o {output_file}"
-
+            cmd += ["-o", output_file]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🧠 Starting Volatility3 analysis: {plugin}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Volatility3 analysis completed")
         return jsonify(result)
     except Exception as e:
@@ -15636,18 +15905,24 @@ def foremost():
         # Ensure output directory exists
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        command = f"foremost -o {output_dir}"
+        if not _validate_path(input_file):
+            return jsonify({"error": "invalid input_file"}), 400
+        if not _validate_path(output_dir):
+            return jsonify({"error": "invalid output_dir"}), 400
+        if file_types and _SHELL_META_RE.search(file_types):
+            return jsonify({"error": "invalid file_types"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["foremost", "-o", output_dir]
         if file_types:
-            command += f" -t {file_types}"
-
+            cmd += ["-t", file_types]
         if additional_args:
-            command += f" {additional_args}"
-
-        command += f" {input_file}"
+            cmd += additional_args.split()
+        cmd.append(input_file)
 
         logger.info(f"📁 Starting Foremost file carving: {input_file}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         result["output_directory"] = output_dir
         logger.info(f"📊 Foremost carving completed")
         return jsonify(result)
@@ -15682,22 +15957,30 @@ def steghide():
         elif action == "embed":
             if not embed_file:
                 return jsonify({"error": "Embed file required for embed action"}), 400
-            command = f"steghide embed -cf {cover_file} -ef {embed_file}"
+            if not embed_file:
+                return jsonify({"error": "Embed file required for embed action"}), 400
+            if not _validate_path(embed_file):
+                return jsonify({"error": "invalid embed_file"}), 400
+            cmd: list[str] = ["steghide", "embed", "-cf", cover_file, "-ef", embed_file]
         elif action == "info":
-            command = f"steghide info {cover_file}"
+            cmd = ["steghide", "info", cover_file]
         else:
             return jsonify({"error": "Invalid action. Use: extract, embed, info"}), 400
 
         if passphrase:
-            command += f" -p {passphrase}"
+            if _SHELL_META_RE.search(passphrase):
+                return jsonify({"error": "invalid passphrase"}), 400
+            cmd += ["-p", passphrase]
         else:
-            command += " -p ''"  # Empty passphrase
+            cmd += ["-p", ""]  # Empty passphrase
 
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🖼️ Starting Steghide {action}: {cover_file}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 Steghide {action} completed")
         return jsonify(result)
     except Exception as e:
@@ -15722,21 +16005,27 @@ def exiftool():
                 "error": "File path parameter is required"
             }), 400
 
-        command = f"exiftool"
+        if not _validate_path(file_path):
+            return jsonify({"error": "invalid file_path"}), 400
+        allowed_formats = {"", "json", "xml", "csv", "html"}
+        if output_format not in allowed_formats:
+            return jsonify({"error": "invalid output_format"}), 400
+        if tags and _SHELL_META_RE.search(tags):
+            return jsonify({"error": "invalid tags"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["exiftool"]
         if output_format:
-            command += f" -{output_format}"
-
+            cmd.append(f"-{output_format}")
         if tags:
-            command += f" -{tags}"
-
+            cmd.append(f"-{tags}")
         if additional_args:
-            command += f" {additional_args}"
-
-        command += f" {file_path}"
+            cmd += additional_args.split()
+        cmd.append(file_path)
 
         logger.info(f"📷 Starting ExifTool analysis: {file_path}")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 ExifTool analysis completed")
         return jsonify(result)
     except Exception as e:
@@ -15762,13 +16051,28 @@ def hashpump():
                 "error": "Signature, data, key_length, and append_data parameters are required"
             }), 400
 
-        command = f"hashpump -s {signature} -d '{data}' -k {key_length} -a '{append_data}'"
+        if _SHELL_META_RE.search(signature):
+            return jsonify({"error": "invalid signature"}), 400
+        if _SHELL_META_RE.search(data):
+            return jsonify({"error": "invalid data"}), 400
+        if _SHELL_META_RE.search(append_data):
+            return jsonify({"error": "invalid append_data"}), 400
+        try:
+            _key_length = int(key_length)
+        except (TypeError, ValueError):
+            return jsonify({"error": "key_length must be an integer"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = [
+            "hashpump", "-s", signature, "-d", data,
+            "-k", str(_key_length), "-a", append_data,
+        ]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
         logger.info(f"🔐 Starting HashPump attack")
-        result = execute_command(command)
+        result = execute_command(cmd)
         logger.info(f"📊 HashPump attack completed")
         return jsonify(result)
     except Exception as e:
@@ -15811,21 +16115,38 @@ def hakrawler():
             }), 400
 
         # Build command for standard Kali Linux hakrawler (hakluke version)
-        command = f"echo '{url}' | hakrawler -d {depth}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        try:
+            _depth = int(depth)
+        except (TypeError, ValueError):
+            return jsonify({"error": "depth must be an integer"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        import subprocess as _subprocess
+        _cmd: list[str] = ["hakrawler", "-d", str(_depth)]
         if forms:
-            command += " -s"  # Show sources (includes forms)
+            _cmd.append("-s")
         if robots or sitemap or wayback:
-            command += " -subs"  # Include subdomains for better coverage
-
-        # Add unique URLs flag for cleaner output
-        command += " -u"
-
+            _cmd.append("-subs")
+        _cmd.append("-u")
         if additional_args:
-            command += f" {additional_args}"
+            _cmd += additional_args.split()
+        _proc = _subprocess.run(
+            _cmd,
+            input=url.encode(errors="replace"),
+            capture_output=True,
+            timeout=120,
+        )
+        result = {
+            "success": _proc.returncode == 0,
+            "stdout": _proc.stdout.decode(errors="replace"),
+            "stderr": _proc.stderr.decode(errors="replace"),
+            "return_code": _proc.returncode,
+        }
 
         logger.info(f"🕷️ Starting Hakrawler crawling: {url}")
-        result = execute_command(command)
         logger.info(f"📊 Hakrawler crawling completed")
         return jsonify(result)
     except Exception as e:
