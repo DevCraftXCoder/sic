@@ -103,7 +103,7 @@ logger = logging.getLogger(__name__)
 # Flask app configuration
 app = Flask(__name__)
 app.secret_key = os.environ.get("SIC_SECRET_KEY") or os.urandom(32)
-_SIC_ENV = os.environ.get("SIC_ENV", "development")
+_SIC_ENV = os.environ.get("SIC_ENV", "production")
 if _SIC_ENV == "production":
     if not os.environ.get("SIC_SECRET_KEY"):
         raise SystemExit("FATAL: SIC_ENV=production requires SIC_SECRET_KEY to be set explicitly")
@@ -9257,7 +9257,10 @@ class FileOperationsManager:
     def create_file(self, filename: str, content: str, binary: bool = False) -> Dict[str, Any]:
         """Create a file with the specified content"""
         try:
-            file_path = self.base_dir / filename
+            # P1-IV-5 fix: resolve path and verify it stays within base_dir
+            file_path = (self.base_dir / filename).resolve()
+            if not str(file_path).startswith(str(self.base_dir.resolve())):
+                return {"success": False, "error": "path traversal rejected"}
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
             if len(content.encode()) > self.max_file_size:
@@ -9280,7 +9283,10 @@ class FileOperationsManager:
     def modify_file(self, filename: str, content: str, append: bool = False) -> Dict[str, Any]:
         """Modify an existing file"""
         try:
-            file_path = self.base_dir / filename
+            # P1-IV-5 fix: resolve path and verify it stays within base_dir
+            file_path = (self.base_dir / filename).resolve()
+            if not str(file_path).startswith(str(self.base_dir.resolve())):
+                return {"success": False, "error": "path traversal rejected"}
             if not file_path.exists():
                 return {"success": False, "error": "File does not exist"}
 
@@ -9298,7 +9304,10 @@ class FileOperationsManager:
     def delete_file(self, filename: str) -> Dict[str, Any]:
         """Delete a file or directory"""
         try:
-            file_path = self.base_dir / filename
+            # P1-IV-5 fix: resolve path and verify it stays within base_dir
+            file_path = (self.base_dir / filename).resolve()
+            if not str(file_path).startswith(str(self.base_dir.resolve())):
+                return {"success": False, "error": "path traversal rejected"}
             if not file_path.exists():
                 return {"success": False, "error": "File does not exist"}
 
@@ -9531,7 +9540,7 @@ def create_file():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error creating file: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/files/modify", methods=["POST"])
 def modify_file():
@@ -9549,7 +9558,7 @@ def modify_file():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error modifying file: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/files/delete", methods=["DELETE"])
 def delete_file():
@@ -9565,7 +9574,7 @@ def delete_file():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error deleting file: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/files/list", methods=["GET"])
 def list_files():
@@ -9576,7 +9585,7 @@ def list_files():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error listing files: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # Payload Generation Endpoint
 @app.route("/api/payloads/generate", methods=["POST"])
@@ -9618,7 +9627,7 @@ def generate_payload():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error generating payload: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # Cache Management Endpoint
 @app.route("/api/cache/stats", methods=["GET"])
@@ -9668,7 +9677,7 @@ def list_processes():
         })
     except Exception as e:
         logger.error(f"💥 Error listing processes: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/processes/status/<int:pid>", methods=["GET"])
 def get_process_status(pid):
@@ -9699,7 +9708,7 @@ def get_process_status(pid):
 
     except Exception as e:
         logger.error(f"💥 Error getting process status: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/processes/terminate/<int:pid>", methods=["POST"])
 def terminate_process(pid):
@@ -9721,7 +9730,7 @@ def terminate_process(pid):
 
     except Exception as e:
         logger.error(f"💥 Error terminating process {pid}: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/processes/pause/<int:pid>", methods=["POST"])
 def pause_process(pid):
@@ -9743,7 +9752,7 @@ def pause_process(pid):
 
     except Exception as e:
         logger.error(f"💥 Error pausing process {pid}: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/processes/resume/<int:pid>", methods=["POST"])
 def resume_process(pid):
@@ -9765,7 +9774,7 @@ def resume_process(pid):
 
     except Exception as e:
         logger.error(f"💥 Error resuming process {pid}: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/processes/dashboard", methods=["GET"])
 def process_dashboard():
@@ -9818,7 +9827,7 @@ def process_dashboard():
 
     except Exception as e:
         logger.error(f"💥 Error getting process dashboard: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/visual/vulnerability-card", methods=["POST"])
 def create_vulnerability_card():
@@ -9839,7 +9848,7 @@ def create_vulnerability_card():
 
     except Exception as e:
         logger.error(f"💥 Error creating vulnerability card: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/visual/summary-report", methods=["POST"])
 def create_summary_report():
@@ -9861,7 +9870,7 @@ def create_summary_report():
 
     except Exception as e:
         logger.error(f"💥 Error creating summary report: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/visual/tool-output", methods=["POST"])
 def format_tool_output():
@@ -9886,7 +9895,7 @@ def format_tool_output():
 
     except Exception as e:
         logger.error(f"💥 Error formatting tool output: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # INTELLIGENT DECISION ENGINE API ENDPOINTS
@@ -9917,7 +9926,7 @@ def analyze_target():
 
     except Exception as e:
         logger.error(f"💥 Error analyzing target: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/intelligence/select-tools", methods=["POST"])
 def select_optimal_tools():
@@ -9952,7 +9961,7 @@ def select_optimal_tools():
 
     except Exception as e:
         logger.error(f"💥 Error selecting tools: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/intelligence/optimize-parameters", methods=["POST"])
 def optimize_tool_parameters():
@@ -9988,7 +9997,7 @@ def optimize_tool_parameters():
 
     except Exception as e:
         logger.error(f"💥 Error optimizing parameters: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/intelligence/create-attack-chain", methods=["POST"])
 def create_attack_chain():
@@ -10023,7 +10032,7 @@ def create_attack_chain():
 
     except Exception as e:
         logger.error(f"💥 Error creating attack chain: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/intelligence/smart-scan", methods=["POST"])
 def intelligent_smart_scan():
@@ -10034,6 +10043,9 @@ def intelligent_smart_scan():
             return jsonify({"error": "Target is required"}), 400
 
         target = data['target']
+        # P0-1 fix: validate target before dispatching to helpers
+        if not _validate_target(target, max_len=2048):
+            return jsonify({"error": "invalid target"}), 400
         objective = data.get('objective', 'comprehensive')
         max_tools = data.get('max_tools', 5)
 
@@ -10175,17 +10187,22 @@ def intelligent_smart_scan():
 
     except Exception as e:
         logger.error(f"💥 Error in intelligent smart scan: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}", "success": False}), 500
+        return jsonify({"error": "An internal server error occurred", "success": False}), 500
 
 # Helper functions for intelligent smart scan tool execution
 def execute_nmap_scan(target, params):
     """Execute nmap scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         scan_type = params.get('scan_type', '-sV')
         ports = params.get('ports', '')
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
 
-        # Build nmap command
+        # Build nmap command (list form — shell=False, no injection risk)
         cmd_parts = ['nmap', scan_type]
         if ports:
             cmd_parts.extend(['-p', ports])
@@ -10193,31 +10210,41 @@ def execute_nmap_scan(target, params):
             cmd_parts.extend(additional_args.split())
         cmd_parts.append(target)
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_gobuster_scan(target, params):
     """Execute gobuster scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         mode = params.get('mode', 'dir')
         wordlist = params.get('wordlist', '/usr/share/wordlists/dirb/common.txt')
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
 
         cmd_parts = ['gobuster', mode, '-u', target, '-w', wordlist]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_nuclei_scan(target, params):
     """Execute nuclei scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         severity = params.get('severity', '')
         tags = params.get('tags', '')
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
 
         cmd_parts = ['nuclei', '-u', target]
         if severity:
@@ -10227,39 +10254,54 @@ def execute_nuclei_scan(target, params):
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_nikto_scan(target, params):
     """Execute nikto scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['nikto', '-h', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_sqlmap_scan(target, params):
     """Execute sqlmap scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '--batch --random-agent')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['sqlmap', '-u', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_ffuf_scan(target, params):
     """Execute ffuf scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         wordlist = params.get('wordlist', '/usr/share/wordlists/dirb/common.txt')
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
 
         # Ensure target has FUZZ placeholder
         if 'FUZZ' not in target:
@@ -10269,128 +10311,181 @@ def execute_ffuf_scan(target, params):
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_feroxbuster_scan(target, params):
     """Execute feroxbuster scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         wordlist = params.get('wordlist', '/usr/share/wordlists/dirb/common.txt')
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
 
         cmd_parts = ['feroxbuster', '-u', target, '-w', wordlist]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_katana_scan(target, params):
     """Execute katana scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['katana', '-u', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_httpx_scan(target, params):
     """Execute httpx scan with optimized parameters"""
     try:
+        # P0-2 fix: replaced f-string pipe injection (echo {target} | httpx ...)
+        # with list-form httpx -u which accepts target directly — no shell=True needed
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '-tech-detect -status-code')
-        # Use shell command with pipe for httpx
-        cmd = f"echo {target} | httpx {additional_args}"
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
+        import shlex
+        cmd = ['httpx', '-u', target]
+        if additional_args:
+            cmd.extend(shlex.split(additional_args))
 
-        return execute_command(cmd)
+        return execute_command(cmd)  # list form — shell=False, no pipe needed
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_wpscan_scan(target, params):
     """Execute wpscan scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '--enumerate p,t,u')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['wpscan', '--url', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_dirsearch_scan(target, params):
     """Execute dirsearch scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['dirsearch', '-u', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_arjun_scan(target, params):
     """Execute arjun scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['arjun', '-u', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_paramspider_scan(target, params):
     """Execute paramspider scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['paramspider', '-d', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_dalfox_scan(target, params):
     """Execute dalfox scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['dalfox', 'url', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_amass_scan(target, params):
     """Execute amass scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['amass', 'enum', '-d', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def execute_subfinder_scan(target, params):
     """Execute subfinder scan with optimized parameters"""
     try:
+        # P0-1 fix: validate target and additional_args before building command
+        if not _validate_target(target):
+            return {"success": False, "error": "invalid target"}
         additional_args = params.get('additional_args', '')
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return {"success": False, "error": "invalid additional_args"}
         cmd_parts = ['subfinder', '-d', target]
         if additional_args:
             cmd_parts.extend(additional_args.split())
 
-        return execute_command(' '.join(cmd_parts))
+        return execute_command(cmd_parts)  # list form — shell=False
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -10445,7 +10540,7 @@ def detect_technologies():
 
     except Exception as e:
         logger.error(f"💥 Error in technology detection: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # BUG BOUNTY HUNTING WORKFLOW API ENDPOINTS
@@ -10487,7 +10582,7 @@ def create_reconnaissance_workflow():
 
     except Exception as e:
         logger.error(f"💥 Error creating reconnaissance workflow: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/bugbounty/vulnerability-hunting-workflow", methods=["POST"])
 def create_vulnerability_hunting_workflow():
@@ -10523,7 +10618,7 @@ def create_vulnerability_hunting_workflow():
 
     except Exception as e:
         logger.error(f"💥 Error creating vulnerability hunting workflow: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/bugbounty/business-logic-workflow", methods=["POST"])
 def create_business_logic_workflow():
@@ -10554,7 +10649,7 @@ def create_business_logic_workflow():
 
     except Exception as e:
         logger.error(f"💥 Error creating business logic workflow: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/bugbounty/osint-workflow", methods=["POST"])
 def create_osint_workflow():
@@ -10584,7 +10679,7 @@ def create_osint_workflow():
 
     except Exception as e:
         logger.error(f"💥 Error creating OSINT workflow: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/bugbounty/file-upload-testing", methods=["POST"])
 def create_file_upload_testing():
@@ -10615,7 +10710,7 @@ def create_file_upload_testing():
 
     except Exception as e:
         logger.error(f"💥 Error creating file upload testing workflow: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/bugbounty/comprehensive-assessment", methods=["POST"])
 def create_comprehensive_bugbounty_assessment():
@@ -10674,7 +10769,7 @@ def create_comprehensive_bugbounty_assessment():
 
     except Exception as e:
         logger.error(f"💥 Error creating comprehensive assessment: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # SECURITY TOOLS API ENDPOINTS
@@ -10712,7 +10807,7 @@ def nmap():
 
     except Exception as e:
         logger.error("Error in nmap endpoint: %s", str(e))
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/gobuster", methods=["POST"])
 def gobuster():
@@ -10746,7 +10841,7 @@ def gobuster():
     except Exception as e:
         logger.error(f"💥 Error in gobuster endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/nuclei", methods=["POST"])
@@ -10767,19 +10862,28 @@ def nuclei():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"nuclei -u {target}"
+        # P0-5 fix: moved validation BEFORE the use_recovery branch so it always runs.
+        # Previously _validate_target was only in the else branch (use_recovery=False),
+        # allowing injection when use_recovery=True (the default).
+        if not _validate_target(target, max_len=2048):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        # Build safe list-form command (used by both branches)
+        cmd: list[str] = ["nuclei", "-u", target]
         if severity:
-            command += f" -severity {severity}"
-
+            cmd += ["-severity", severity]
         if tags:
-            command += f" -tags {tags}"
-
+            cmd += ["-tags", tags]
         if template:
-            command += f" -t {template}"
-
+            cmd += ["-t", template]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
+
+        # Retain legacy string command for execute_command_with_recovery (recovery
+        # uses command string for logging/display only — validation already done above)
+        command = " ".join(cmd)
 
         logger.info(f"🔬 Starting Nuclei vulnerability scan: {target}")
 
@@ -10794,19 +10898,7 @@ def nuclei():
             }
             result = execute_command_with_recovery("nuclei", command, tool_params)
         else:
-            if not _validate_target(target, max_len=2048):
-                return jsonify({"error": "invalid target"}), 400
-            if additional_args and _SHELL_META_RE.search(additional_args):
-                return jsonify({"error": "invalid additional_args"}), 400
-            cmd: list[str] = ["nuclei", "-u", target]
-            if severity:
-                cmd += ["-severity", severity]
-            if tags:
-                cmd += ["-tags", tags]
-            if template:
-                cmd += ["-t", template]
-            if additional_args:
-                cmd += additional_args.split()
+            # Validation already done above; use list-form directly
             result = execute_command(cmd)
 
         logger.info(f"📊 Nuclei scan completed for {target}")
@@ -10815,7 +10907,7 @@ def nuclei():
     except Exception as e:
         logger.error(f"💥 Error in nuclei endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -10865,7 +10957,7 @@ def prowler():
     except Exception as e:
         logger.error(f"💥 Error in prowler endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/trivy", methods=["POST"])
@@ -10915,7 +11007,7 @@ def trivy():
     except Exception as e:
         logger.error(f"💥 Error in trivy endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -10963,7 +11055,7 @@ def scout_suite():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in scout-suite endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/cloudmapper", methods=["POST"])
 def cloudmapper():
@@ -11002,7 +11094,7 @@ def cloudmapper():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in cloudmapper endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/pacu", methods=["POST"])
 def pacu():
@@ -11070,7 +11162,7 @@ def pacu():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in pacu endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/kube-hunter", methods=["POST"])
 def kube_hunter():
@@ -11121,7 +11213,7 @@ def kube_hunter():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in kube-hunter endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/kube-bench", methods=["POST"])
 def kube_bench():
@@ -11164,7 +11256,7 @@ def kube_bench():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in kube-bench endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/docker-bench-security", methods=["POST"])
 def docker_bench_security():
@@ -11202,7 +11294,7 @@ def docker_bench_security():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in docker-bench-security endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/clair", methods=["POST"])
 def clair():
@@ -11239,7 +11331,7 @@ def clair():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in clair endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/falco", methods=["POST"])
 def falco():
@@ -11271,7 +11363,7 @@ def falco():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in falco endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/checkov", methods=["POST"])
 def checkov():
@@ -11308,7 +11400,7 @@ def checkov():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in checkov endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/terrascan", methods=["POST"])
 def terrascan():
@@ -11343,7 +11435,7 @@ def terrascan():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in terrascan endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/dirb", methods=["POST"])
 def dirb():
@@ -11378,7 +11470,7 @@ def dirb():
     except Exception as e:
         logger.error(f"💥 Error in dirb endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/nikto", methods=["POST"])
@@ -11411,7 +11503,7 @@ def nikto():
     except Exception as e:
         logger.error(f"💥 Error in nikto endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/sqlmap", methods=["POST"])
@@ -11442,7 +11534,7 @@ def sqlmap():
         return jsonify(result)
     except Exception as e:
         logger.error("Error in sqlmap endpoint: %s", str(e))
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/metasploit", methods=["POST"])
 def metasploit():
@@ -11488,7 +11580,7 @@ def metasploit():
     except Exception as e:
         logger.error(f"💥 Error in metasploit endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/hydra", methods=["POST"])
@@ -11546,7 +11638,7 @@ def hydra():
         return jsonify(result)
     except Exception as e:
         logger.error("Error in hydra endpoint: %s", str(e))
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/john", methods=["POST"])
 def john():
@@ -11587,7 +11679,7 @@ def john():
     except Exception as e:
         logger.error(f"💥 Error in john endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/wpscan", methods=["POST"])
@@ -11620,7 +11712,7 @@ def wpscan():
     except Exception as e:
         logger.error(f"💥 Error in wpscan endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/enum4linux", methods=["POST"])
@@ -11654,7 +11746,7 @@ def enum4linux():
     except Exception as e:
         logger.error(f"💥 Error in enum4linux endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/ffuf", methods=["POST"])
@@ -11701,7 +11793,7 @@ def ffuf():
     except Exception as e:
         logger.error(f"💥 Error in ffuf endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/netexec", methods=["POST"])
@@ -11755,7 +11847,7 @@ def netexec():
         return jsonify(result)
     except Exception as e:
         logger.error("Error in netexec endpoint: %s", str(e))
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/amass", methods=["POST"])
 def amass():
@@ -11788,7 +11880,7 @@ def amass():
     except Exception as e:
         logger.error(f"💥 Error in amass endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/hashcat", methods=["POST"])
@@ -11837,7 +11929,7 @@ def hashcat():
     except Exception as e:
         logger.error(f"💥 Error in hashcat endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/subfinder", methods=["POST"])
@@ -11876,7 +11968,7 @@ def subfinder():
     except Exception as e:
         logger.error(f"💥 Error in subfinder endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/smbmap", methods=["POST"])
@@ -11918,7 +12010,7 @@ def smbmap():
     except Exception as e:
         logger.error(f"💥 Error in smbmap endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -11963,7 +12055,7 @@ def rustscan():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in rustscan endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/masscan", methods=["POST"])
 def masscan():
@@ -12008,7 +12100,7 @@ def masscan():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in masscan endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/nmap-advanced", methods=["POST"])
 def nmap_advanced():
@@ -12063,7 +12155,7 @@ def nmap_advanced():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in advanced nmap endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/autorecon", methods=["POST"])
 def autorecon():
@@ -12103,7 +12195,7 @@ def autorecon():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in autorecon endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/enum4linux-ng", methods=["POST"])
 def enum4linux_ng():
@@ -12156,7 +12248,7 @@ def enum4linux_ng():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in enum4linux-ng endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/rpcclient", methods=["POST"])
 def rpcclient():
@@ -12221,7 +12313,7 @@ def rpcclient():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in rpcclient endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/nbtscan", methods=["POST"])
 def nbtscan():
@@ -12255,7 +12347,7 @@ def nbtscan():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in nbtscan endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/arp-scan", methods=["POST"])
 def arp_scan():
@@ -12294,7 +12386,7 @@ def arp_scan():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in arp-scan endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/responder", methods=["POST"])
 def responder():
@@ -12336,7 +12428,7 @@ def responder():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in responder endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/volatility", methods=["POST"])
 def volatility():
@@ -12379,7 +12471,7 @@ def volatility():
     except Exception as e:
         logger.error(f"💥 Error in volatility endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/msfvenom", methods=["POST"])
@@ -12426,7 +12518,7 @@ def msfvenom():
     except Exception as e:
         logger.error(f"💥 Error in msfvenom endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -12478,7 +12570,7 @@ def gdb():
     except Exception as e:
         logger.error(f"💥 Error in gdb endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/radare2", methods=["POST"])
@@ -12521,7 +12613,7 @@ def radare2():
     except Exception as e:
         logger.error(f"💥 Error in radare2 endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/binwalk", methods=["POST"])
@@ -12558,7 +12650,7 @@ def binwalk():
     except Exception as e:
         logger.error(f"💥 Error in binwalk endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/ropgadget", methods=["POST"])
@@ -12594,7 +12686,7 @@ def ropgadget():
     except Exception as e:
         logger.error(f"💥 Error in ropgadget endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/checksec", methods=["POST"])
@@ -12622,7 +12714,7 @@ def checksec():
     except Exception as e:
         logger.error(f"💥 Error in checksec endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/xxd", methods=["POST"])
@@ -12660,7 +12752,7 @@ def xxd():
     except Exception as e:
         logger.error(f"💥 Error in xxd endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/strings", methods=["POST"])
@@ -12695,7 +12787,7 @@ def strings():
     except Exception as e:
         logger.error(f"💥 Error in strings endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/objdump", methods=["POST"])
@@ -12734,7 +12826,7 @@ def objdump():
     except Exception as e:
         logger.error(f"💥 Error in objdump endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -12785,7 +12877,7 @@ def ghidra():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in ghidra endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/pwntools", methods=["POST"])
 def pwntools():
@@ -12862,7 +12954,7 @@ p.interactive()
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in pwntools endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/one-gadget", methods=["POST"])
 def one_gadget():
@@ -12892,7 +12984,7 @@ def one_gadget():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in one_gadget endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/libc-database", methods=["POST"])
 def libc_database():
@@ -12942,7 +13034,7 @@ def libc_database():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in libc-database endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/gdb-peda", methods=["POST"])
 def gdb_peda():
@@ -12993,7 +13085,7 @@ def gdb_peda():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in gdb-peda endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/angr", methods=["POST"])
 def angr():
@@ -13084,7 +13176,7 @@ for func_addr, func in cfg.functions.items():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in angr endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/ropper", methods=["POST"])
 def ropper():
@@ -13131,7 +13223,7 @@ def ropper():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in ropper endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/pwninit", methods=["POST"])
 def pwninit():
@@ -13173,7 +13265,7 @@ def pwninit():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in pwninit endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # ADDITIONAL WEB SECURITY TOOLS
@@ -13217,7 +13309,7 @@ def feroxbuster():
     except Exception as e:
         logger.error(f"💥 Error in feroxbuster endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/dotdotpwn", methods=["POST"])
@@ -13254,7 +13346,7 @@ def dotdotpwn():
     except Exception as e:
         logger.error(f"💥 Error in dotdotpwn endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/xsser", methods=["POST"])
@@ -13292,7 +13384,7 @@ def xsser():
     except Exception as e:
         logger.error(f"💥 Error in xsser endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/wfuzz", methods=["POST"])
@@ -13328,7 +13420,7 @@ def wfuzz():
     except Exception as e:
         logger.error(f"💥 Error in wfuzz endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -13376,7 +13468,7 @@ def dirsearch():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in dirsearch endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/katana", methods=["POST"])
 def katana():
@@ -13419,7 +13511,7 @@ def katana():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in katana endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/gau", methods=["POST"])
 def gau():
@@ -13461,7 +13553,7 @@ def gau():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in gau endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/waybackurls", methods=["POST"])
 def waybackurls():
@@ -13496,7 +13588,7 @@ def waybackurls():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in waybackurls endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/arjun", methods=["POST"])
 def arjun():
@@ -13546,7 +13638,7 @@ def arjun():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in arjun endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/paramspider", methods=["POST"])
 def paramspider():
@@ -13590,7 +13682,7 @@ def paramspider():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in paramspider endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/x8", methods=["POST"])
 def x8():
@@ -13636,7 +13728,7 @@ def x8():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in x8 endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/jaeles", methods=["POST"])
 def jaeles():
@@ -13682,7 +13774,7 @@ def jaeles():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in jaeles endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/dalfox", methods=["POST"])
 def dalfox():
@@ -13729,7 +13821,7 @@ def dalfox():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in dalfox endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/httpx", methods=["POST"])
 def httpx():
@@ -13781,7 +13873,7 @@ def httpx():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in httpx endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/anew", methods=["POST"])
 def anew():
@@ -13825,7 +13917,7 @@ def anew():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in anew endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/qsreplace", methods=["POST"])
 def qsreplace():
@@ -13867,7 +13959,7 @@ def qsreplace():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in qsreplace endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/uro", methods=["POST"])
 def uro():
@@ -13916,7 +14008,7 @@ def uro():
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in uro endpoint: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # ADVANCED WEB SECURITY TOOLS CONTINUED
@@ -14778,7 +14870,7 @@ def http_framework_endpoint():
 
     except Exception as e:
         logger.error(f"{ModernVisualEngine.format_error_card('ERROR', 'HTTP-Framework', str(e))}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/browser-agent", methods=["POST"])
 def browser_agent_endpoint():
@@ -14867,7 +14959,7 @@ def browser_agent_endpoint():
         logger.error(
             f"{ModernVisualEngine.format_error_card('ERROR', 'BrowserAgent', str(e))}"
         )
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/tools/burpsuite-alternative", methods=["POST"])
 def burpsuite_alternative():
@@ -14957,10 +15049,10 @@ def burpsuite_alternative():
 
     except Exception as e:
         logger.error(f"{ModernVisualEngine.format_error_card('CRITICAL', 'BurpAlternative', str(e))}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
         logger.error(f"💥 Error in burpsuite endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/zap", methods=["POST"])
@@ -15023,7 +15115,7 @@ def zap():
     except Exception as e:
         logger.error(f"💥 Error in zap endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/wafw00f", methods=["POST"])
@@ -15056,7 +15148,7 @@ def wafw00f():
     except Exception as e:
         logger.error(f"💥 Error in wafw00f endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/fierce", methods=["POST"])
@@ -15094,7 +15186,7 @@ def fierce():
     except Exception as e:
         logger.error(f"💥 Error in fierce endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/dnsenum", methods=["POST"])
@@ -15137,7 +15229,7 @@ def dnsenum():
     except Exception as e:
         logger.error(f"💥 Error in dnsenum endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # Python Environment Management Endpoints
@@ -15169,7 +15261,7 @@ def install_python_package():
 
     except Exception as e:
         logger.error(f"💥 Error installing Python package: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/python/execute", methods=["POST"])
 def execute_python_script():
@@ -15183,6 +15275,11 @@ def execute_python_script():
         if not script:
             return jsonify({"error": "Script content is required"}), 400
 
+        # P1-IV-6 fix: validate env_name to prevent path traversal via PythonEnvironmentManager
+        import re as _re_local
+        if not _re_local.match(r'^[a-zA-Z0-9_\-]+$', env_name):
+            return jsonify({"error": "invalid env_name"}), 400
+
         # Create script file
         script_result = file_manager.create_file(filename, script)
         if not script_result["success"]:
@@ -15192,8 +15289,9 @@ def execute_python_script():
         python_path = env_manager.get_python_path(env_name)
         script_path = script_result["path"]
 
-        # Execute script
-        command = f"{python_path} {script_path}"
+        # P1-IV-6 fix: use list-form for execute_command (shell=False)
+        # python_path and script_path are both controlled server-side
+        command = [python_path, script_path]
         logger.info(f"🐍 Executing Python script in env {env_name}: {filename}")
         result = execute_command(command, use_cache=False)
 
@@ -15207,7 +15305,7 @@ def execute_python_script():
 
     except Exception as e:
         logger.error(f"💥 Error executing Python script: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # AI-POWERED PAYLOAD GENERATION (v5.0 ENHANCEMENT) UNDER DEVELOPMENT
@@ -15449,7 +15547,7 @@ def ai_generate_payload():
         logger.error(f"💥 Error in AI payload generation: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/ai/test_payload", methods=["POST"])
@@ -15469,12 +15567,21 @@ def ai_test_payload():
 
         logger.info(f"🧪 Testing AI-generated payload against {target_url}")
 
-        # Create test command based on method and payload
+        # P0-3 fix: replaced f-string curl commands (shell injection via target_url/payload)
+        # with list-form subprocess — no shell=True, no injection risk
+        if not _validate_target(target_url, max_len=2048):
+            return jsonify({"success": False, "error": "invalid target_url"}), 400
+        if payload and _SHELL_META_RE.search(payload):
+            return jsonify({"success": False, "error": "invalid payload"}), 400
+
+        # Create test command based on method and payload (list form — shell=False)
         if method.upper() == "GET":
             encoded_payload = payload.replace(" ", "%20").replace("'", "%27")
-            test_command = f"curl -s '{target_url}?test={encoded_payload}'"
+            test_command = ["curl", "-s", f"{target_url}?test={encoded_payload}"]
         else:
-            test_command = f"curl -s -X POST -d 'test={payload}' '{target_url}'"
+            test_command = ["curl", "-s", "-X", "POST", "-d", f"test={payload}",
+                            "-H", "Content-Type: application/x-www-form-urlencoded",
+                            target_url]
 
         # Execute test
         result = execute_command(test_command, use_cache=False)
@@ -15507,7 +15614,7 @@ def ai_test_payload():
         logger.error(f"💥 Error in AI payload testing: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -15592,7 +15699,7 @@ def api_fuzzer():
     except Exception as e:
         logger.error(f"💥 Error in API fuzzer: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/graphql_scanner", methods=["POST"])
@@ -15699,7 +15806,7 @@ def graphql_scanner():
     except Exception as e:
         logger.error(f"💥 Error in GraphQL scanner: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/jwt_analyzer", methods=["POST"])
@@ -15797,8 +15904,20 @@ def jwt_analyzer():
                 none_header = base64.b64encode('{"alg":"none","typ":"JWT"}'.encode()).decode().rstrip('=')
                 none_token = f"{none_header}.{none_token_parts[1]}."
 
-                command = f"curl -s -H 'Authorization: Bearer {none_token}' '{target_url}'"
-                none_result = execute_command(command, use_cache=False)
+                # P0-4 fix: replaced f-string curl (shell injection via target_url)
+                # with list-form — no shell=True, no injection risk
+                if not _validate_target(target_url, max_len=2048):
+                    results["vulnerabilities"].append({
+                        "type": "target_url_invalid",
+                        "severity": "INFO",
+                        "description": "target_url failed validation — none-alg test skipped"
+                    })
+                    none_result = {"stdout": "", "success": False}
+                else:
+                    none_cmd = ["curl", "-s", "-H",
+                                f"Authorization: Bearer {none_token}",
+                                target_url]
+                    none_result = execute_command(none_cmd, use_cache=False)
 
                 if "200" in none_result.get("stdout", "") or "success" in none_result.get("stdout", "").lower():
                     results["vulnerabilities"].append({
@@ -15817,7 +15936,7 @@ def jwt_analyzer():
     except Exception as e:
         logger.error(f"💥 Error in JWT analyzer: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/api_schema_analyzer", methods=["POST"])
@@ -15925,7 +16044,7 @@ def api_schema_analyzer():
     except Exception as e:
         logger.error(f"💥 Error in API schema analyzer: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -15976,7 +16095,7 @@ def volatility3():
     except Exception as e:
         logger.error(f"💥 Error in volatility3 endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/foremost", methods=["POST"])
@@ -16022,7 +16141,7 @@ def foremost():
     except Exception as e:
         logger.error(f"💥 Error in foremost endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/steghide", methods=["POST"])
@@ -16079,7 +16198,7 @@ def steghide():
     except Exception as e:
         logger.error(f"💥 Error in steghide endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/exiftool", methods=["POST"])
@@ -16124,7 +16243,7 @@ def exiftool():
     except Exception as e:
         logger.error(f"💥 Error in exiftool endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/tools/hashpump", methods=["POST"])
@@ -16171,7 +16290,7 @@ def hashpump():
     except Exception as e:
         logger.error(f"💥 Error in hashpump endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -16245,7 +16364,7 @@ def hakrawler():
     except Exception as e:
         logger.error(f"💥 Error in hakrawler endpoint: {str(e)}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -16303,7 +16422,7 @@ def cve_monitor():
         logger.error(f"💥 Error in CVE monitoring: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/vuln-intel/exploit-generate", methods=["POST"])
@@ -16376,7 +16495,7 @@ def exploit_generate():
         logger.error(f"💥 Error in exploit generation: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/vuln-intel/attack-chains", methods=["POST"])
@@ -16453,7 +16572,7 @@ def discover_attack_chains():
         logger.error(f"💥 Error in attack chain discovery: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/vuln-intel/threat-feeds", methods=["POST"])
@@ -16588,7 +16707,7 @@ def threat_intelligence_feeds():
         logger.error(f"💥 Error in threat intelligence: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/vuln-intel/zero-day-research", methods=["POST"])
@@ -16727,7 +16846,7 @@ def zero_day_research():
         logger.error(f"💥 Error in zero-day research: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 @app.route("/api/ai/advanced-payload-generation", methods=["POST"])
@@ -16865,7 +16984,7 @@ def advanced_payload_generation():
         logger.error(f"💥 Error in advanced payload generation: {str(e)}")
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An internal server error occurred"
         }), 500
 
 # ============================================================================
@@ -16910,7 +17029,7 @@ def create_ctf_challenge_workflow():
 
     except Exception as e:
         logger.error(f"💥 Error creating CTF workflow: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/ctf/auto-solve-challenge", methods=["POST"])
 def auto_solve_ctf_challenge():
@@ -16950,7 +17069,7 @@ def auto_solve_ctf_challenge():
 
     except Exception as e:
         logger.error(f"💥 Error in CTF auto-solve: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/ctf/team-strategy", methods=["POST"])
 def create_ctf_team_strategy():
@@ -16990,7 +17109,7 @@ def create_ctf_team_strategy():
 
     except Exception as e:
         logger.error(f"💥 Error creating CTF team strategy: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/ctf/suggest-tools", methods=["POST"])
 def suggest_ctf_tools():
@@ -17027,7 +17146,7 @@ def suggest_ctf_tools():
 
     except Exception as e:
         logger.error(f"💥 Error suggesting CTF tools: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/ctf/cryptography-solver", methods=["POST"])
 def ctf_cryptography_solver():
@@ -17125,7 +17244,7 @@ def ctf_cryptography_solver():
 
     except Exception as e:
         logger.error(f"💥 Error in CTF crypto solver: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/ctf/forensics-analyzer", methods=["POST"])
 def ctf_forensics_analyzer():
@@ -17268,7 +17387,7 @@ def ctf_forensics_analyzer():
 
     except Exception as e:
         logger.error(f"💥 Error in CTF forensics analyzer: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/ctf/binary-analyzer", methods=["POST"])
 def ctf_binary_analyzer():
@@ -17444,7 +17563,7 @@ def ctf_binary_analyzer():
 
     except Exception as e:
         logger.error(f"💥 Error in CTF binary analyzer: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # ADVANCED PROCESS MANAGEMENT API ENDPOINTS (v10.0 ENHANCEMENT)
@@ -17469,7 +17588,7 @@ def get_async_task_result(task_id):
 
     except Exception as e:
         logger.error(f"💥 Error getting task result: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/pool-stats", methods=["GET"])
 def get_process_pool_stats():
@@ -17486,7 +17605,7 @@ def get_process_pool_stats():
 
     except Exception as e:
         logger.error(f"💥 Error getting pool stats: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/cache-stats", methods=["GET"])
 def get_cache_stats():
@@ -17503,7 +17622,7 @@ def get_cache_stats():
 
     except Exception as e:
         logger.error(f"💥 Error getting cache stats: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/clear-cache", methods=["POST"])
 def clear_process_cache():
@@ -17520,7 +17639,7 @@ def clear_process_cache():
 
     except Exception as e:
         logger.error(f"💥 Error clearing cache: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/resource-usage", methods=["GET"])
 def get_resource_usage():
@@ -17539,7 +17658,7 @@ def get_resource_usage():
 
     except Exception as e:
         logger.error(f"💥 Error getting resource usage: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/performance-dashboard", methods=["GET"])
 def get_performance_dashboard():
@@ -17572,7 +17691,7 @@ def get_performance_dashboard():
 
     except Exception as e:
         logger.error(f"💥 Error getting performance dashboard: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/terminate-gracefully/<int:pid>", methods=["POST"])
 def terminate_process_gracefully(pid):
@@ -17601,7 +17720,7 @@ def terminate_process_gracefully(pid):
 
     except Exception as e:
         logger.error(f"💥 Error terminating process {pid}: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/auto-scaling", methods=["POST"])
 def configure_auto_scaling():
@@ -17627,7 +17746,7 @@ def configure_auto_scaling():
 
     except Exception as e:
         logger.error(f"💥 Error configuring auto-scaling: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/scale-pool", methods=["POST"])
 def manual_scale_pool():
@@ -17671,7 +17790,7 @@ def manual_scale_pool():
 
     except Exception as e:
         logger.error(f"💥 Error scaling pool: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/process/health-check", methods=["GET"])
 def process_health_check():
@@ -17763,7 +17882,7 @@ def process_health_check():
 
     except Exception as e:
         logger.error(f"💥 Error in health check: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # ============================================================================
 # BANNER AND STARTUP CONFIGURATION
@@ -17785,7 +17904,7 @@ def get_error_statistics():
         })
     except Exception as e:
         logger.error(f"Error getting error statistics: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/error-handling/test-recovery", methods=["POST"])
 def test_error_recovery():
@@ -17831,7 +17950,7 @@ def test_error_recovery():
 
     except Exception as e:
         logger.error(f"Error testing recovery system: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/error-handling/fallback-chains", methods=["GET"])
 def get_fallback_chains():
@@ -17859,7 +17978,7 @@ def get_fallback_chains():
 
     except Exception as e:
         logger.error(f"Error getting fallback chains: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/error-handling/execute-with-recovery", methods=["POST"])
 def execute_with_recovery_endpoint():
@@ -17892,7 +18011,7 @@ def execute_with_recovery_endpoint():
 
     except Exception as e:
         logger.error(f"Error executing command with recovery: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/error-handling/classify-error", methods=["POST"])
 def classify_error_endpoint():
@@ -17924,7 +18043,7 @@ def classify_error_endpoint():
 
     except Exception as e:
         logger.error(f"Error classifying error: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/error-handling/parameter-adjustments", methods=["POST"])
 def get_parameter_adjustments():
@@ -17957,7 +18076,7 @@ def get_parameter_adjustments():
 
     except Exception as e:
         logger.error(f"Error getting parameter adjustments: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 @app.route("/api/error-handling/alternative-tools", methods=["GET"])
 def get_alternative_tools():
@@ -17980,7 +18099,7 @@ def get_alternative_tools():
 
     except Exception as e:
         logger.error(f"Error getting alternative tools: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 # Create the banner after all classes are defined
 BANNER = ModernVisualEngine.create_banner()
@@ -17992,7 +18111,7 @@ def handle_unhandled_exception(e: Exception):
     if getattr(e, "code", None) == 429 or type(e).__name__ == "RateLimitExceeded":
         return jsonify({"error": "rate_limit_exceeded", "detail": "Too many requests."}), 429
     logger.error("Unhandled exception: %s", e, exc_info=True)
-    if _SIC_ENV == "production":
+    if os.environ.get("SIC_ENV", "production") != "development":
         return jsonify({"error": "Internal server error"}), 500
     import traceback as _tb
     return jsonify({"error": str(e), "traceback": _tb.format_exc()}), 500
