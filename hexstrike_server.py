@@ -11058,21 +11058,24 @@ def clair():
             logger.warning("🐳 Clair called without image parameter")
             return jsonify({"error": "Image parameter is required"}), 400
 
-        # Use clairctl for scanning
-        command = f"clairctl analyze {image}"
+        if not _validate_target(image, max_len=512):
+            return jsonify({"error": "invalid image"}), 400
+        if config and not _validate_path(config):
+            return jsonify({"error": "invalid config"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["clairctl", "analyze", image]
         if config:
-            command += f" --config {config}"
-
+            cmd += ["--config", config]
         if output_format:
-            command += f" --format {output_format}"
-
+            cmd += ["--format", output_format]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🐳 Starting Clair vulnerability scan: {image}")
-        result = execute_command(command)
-        logger.info(f"📊 Clair scan completed for {image}")
+        logger.info("Starting Clair vulnerability scan: %s", image)
+        result = execute_command(cmd)
+        logger.info("Clair scan completed for %s", image)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in clair endpoint: {str(e)}")
@@ -11089,23 +11092,22 @@ def falco():
         duration = params.get("duration", 60)  # seconds
         additional_args = params.get("additional_args", "")
 
-        command = f"timeout {duration} falco"
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["timeout", str(int(duration)), "falco"]
         if config_file:
-            command += f" --config {config_file}"
-
+            cmd += ["--config", config_file]
         if rules_file:
-            command += f" --rules {rules_file}"
-
+            cmd += ["--rules", rules_file]
         if output_format == "json":
-            command += " --json"
-
+            cmd.append("--json")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🛡️  Starting Falco runtime monitoring for {duration}s")
-        result = execute_command(command)
-        logger.info(f"📊 Falco monitoring completed")
+        logger.info("Starting Falco runtime monitoring for %ss", duration)
+        result = execute_command(cmd)
+        logger.info("Falco monitoring completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in falco endpoint: {str(e)}")
@@ -11123,26 +11125,26 @@ def checkov():
         output_format = params.get("output_format", "json")
         additional_args = params.get("additional_args", "")
 
-        command = f"checkov -d {directory}"
+        if not _validate_path(directory):
+            return jsonify({"error": "invalid directory"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["checkov", "-d", directory]
         if framework:
-            command += f" --framework {framework}"
-
+            cmd += ["--framework", framework]
         if check:
-            command += f" --check {check}"
-
+            cmd += ["--check", check]
         if skip_check:
-            command += f" --skip-check {skip_check}"
-
+            cmd += ["--skip-check", skip_check]
         if output_format:
-            command += f" --output {output_format}"
-
+            cmd += ["--output", output_format]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Checkov IaC scan: {directory}")
-        result = execute_command(command)
-        logger.info(f"📊 Checkov scan completed")
+        logger.info("Starting Checkov IaC scan: %s", directory)
+        result = execute_command(cmd)
+        logger.info("Checkov scan completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in checkov endpoint: {str(e)}")
@@ -11160,22 +11162,23 @@ def terrascan():
         severity = params.get("severity", "")
         additional_args = params.get("additional_args", "")
 
-        command = f"terrascan scan -t {scan_type} -d {iac_dir}"
+        if not _validate_path(iac_dir):
+            return jsonify({"error": "invalid iac_dir"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["terrascan", "scan", "-t", scan_type, "-d", iac_dir]
         if policy_type:
-            command += f" -p {policy_type}"
-
+            cmd += ["-p", policy_type]
         if output_format:
-            command += f" -o {output_format}"
-
+            cmd += ["-o", output_format]
         if severity:
-            command += f" --severity {severity}"
-
+            cmd += ["--severity", severity]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Terrascan IaC scan: {iac_dir}")
-        result = execute_command(command)
+        logger.info("Starting Terrascan IaC scan: %s", iac_dir)
+        result = execute_command(cmd)
         logger.info(f"📊 Terrascan scan completed")
         return jsonify(result)
     except Exception as e:
@@ -11197,14 +11200,20 @@ def dirb():
                 "error": "URL parameter is required"
             }), 400
 
-        command = f"dirb {url} {wordlist}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["dirb", url, wordlist]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"📁 Starting Dirb scan: {url}")
-        result = execute_command(command)
-        logger.info(f"📊 Dirb scan completed for {url}")
+        logger.info("Starting Dirb scan: %s", url)
+        result = execute_command(cmd)
+        logger.info("Dirb scan completed for %s", url)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in dirb endpoint: {str(e)}")
@@ -11226,14 +11235,18 @@ def nikto():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"nikto -h {target}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["nikto", "-h", target]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔬 Starting Nikto scan: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 Nikto scan completed for {target}")
+        logger.info("Starting Nikto scan: %s", target)
+        result = execute_command(cmd)
+        logger.info("Nikto scan completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in nikto endpoint: {str(e)}")
@@ -11296,10 +11309,13 @@ def metasploit():
         with open(resource_file, "w") as f:
             f.write(resource_content)
 
-        command = f"msfconsole -q -r {resource_file}"
+        if not _validate_path(resource_file):
+            return jsonify({"error": "invalid resource_file path"}), 400
 
-        logger.info(f"🚀 Starting Metasploit module: {module}")
-        result = execute_command(command)
+        cmd: list[str] = ["msfconsole", "-q", "-r", resource_file]
+
+        logger.info("Starting Metasploit module: %s", module)
+        result = execute_command(cmd)
 
         # Clean up the temporary file
         try:
@@ -11388,22 +11404,25 @@ def john():
                 "error": "Hash file parameter is required"
             }), 400
 
-        command = f"john"
+        if not _validate_path(hash_file):
+            return jsonify({"error": "invalid hash_file"}), 400
+        if wordlist and not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["john"]
         if format_type:
-            command += f" --format={format_type}"
-
+            cmd += [f"--format={format_type}"]
         if wordlist:
-            command += f" --wordlist={wordlist}"
-
+            cmd += [f"--wordlist={wordlist}"]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
+        cmd.append(hash_file)
 
-        command += f" {hash_file}"
-
-        logger.info(f"🔐 Starting John the Ripper: {hash_file}")
-        result = execute_command(command)
-        logger.info(f"📊 John the Ripper completed")
+        logger.info("Starting John the Ripper: %s", hash_file)
+        result = execute_command(cmd)
+        logger.info("John the Ripper completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in john endpoint: {str(e)}")
@@ -11425,14 +11444,18 @@ def wpscan():
                 "error": "URL parameter is required"
             }), 400
 
-        command = f"wpscan --url {url}"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["wpscan", "--url", url]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting WPScan: {url}")
-        result = execute_command(command)
-        logger.info(f"📊 WPScan completed for {url}")
+        logger.info("Starting WPScan: %s", url)
+        result = execute_command(cmd)
+        logger.info("WPScan completed for %s", url)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in wpscan endpoint: {str(e)}")
@@ -11454,11 +11477,19 @@ def enum4linux():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"enum4linux {additional_args} {target}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
-        logger.info(f"🔍 Starting Enum4linux: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 Enum4linux completed for {target}")
+        cmd: list[str] = ["enum4linux"]
+        if additional_args:
+            cmd += additional_args.split()
+        cmd.append(target)
+
+        logger.info("Starting Enum4linux: %s", target)
+        result = execute_command(cmd)
+        logger.info("Enum4linux completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in enum4linux endpoint: {str(e)}")
@@ -11483,25 +11514,29 @@ def ffuf():
                 "error": "URL parameter is required"
             }), 400
 
-        command = f"ffuf"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "invalid url"}), 400
+        if not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["ffuf"]
         if mode == "directory":
-            command += f" -u {url}/FUZZ -w {wordlist}"
+            cmd += ["-u", url.rstrip("/") + "/FUZZ", "-w", wordlist]
         elif mode == "vhost":
-            command += f" -u {url} -H 'Host: FUZZ' -w {wordlist}"
+            cmd += ["-u", url, "-H", "Host: FUZZ", "-w", wordlist]
         elif mode == "parameter":
-            command += f" -u {url}?FUZZ=value -w {wordlist}"
+            cmd += ["-u", url + "?FUZZ=value", "-w", wordlist]
         else:
-            command += f" -u {url} -w {wordlist}"
-
-        command += f" -mc {match_codes}"
-
+            cmd += ["-u", url, "-w", wordlist]
+        cmd += ["-mc", match_codes]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting FFuf {mode} fuzzing: {url}")
-        result = execute_command(command)
-        logger.info(f"📊 FFuf fuzzing completed for {url}")
+        logger.info("Starting FFuf %s fuzzing: %s", mode, url)
+        result = execute_command(cmd)
+        logger.info("FFuf fuzzing completed for %s", url)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in ffuf endpoint: {str(e)}")
@@ -11577,19 +11612,18 @@ def amass():
                 "error": "Domain parameter is required"
             }), 400
 
-        command = f"amass {mode}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
-        if mode == "enum":
-            command += f" -d {domain}"
-        else:
-            command += f" -d {domain}"
-
+        cmd: list[str] = ["amass", mode, "-d", domain]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Amass {mode}: {domain}")
-        result = execute_command(command)
-        logger.info(f"📊 Amass completed for {domain}")
+        logger.info("Starting Amass %s: %s", mode, domain)
+        result = execute_command(cmd)
+        logger.info("Amass completed for %s", domain)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in amass endpoint: {str(e)}")
@@ -11621,19 +11655,24 @@ def hashcat():
                 "error": "Hash type parameter is required"
             }), 400
 
-        command = f"hashcat -m {hash_type} -a {attack_mode} {hash_file}"
+        if not _validate_path(hash_file):
+            return jsonify({"error": "invalid hash_file"}), 400
+        if wordlist and not _validate_path(wordlist):
+            return jsonify({"error": "invalid wordlist"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["hashcat", "-m", str(hash_type), "-a", str(attack_mode), hash_file]
         if attack_mode == "0" and wordlist:
-            command += f" {wordlist}"
+            cmd.append(wordlist)
         elif attack_mode == "3" and mask:
-            command += f" {mask}"
-
+            cmd.append(mask)
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔐 Starting Hashcat attack: mode {attack_mode}")
-        result = execute_command(command)
-        logger.info(f"📊 Hashcat attack completed")
+        logger.info("Starting Hashcat attack: mode %s", attack_mode)
+        result = execute_command(cmd)
+        logger.info("Hashcat attack completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in hashcat endpoint: {str(e)}")
@@ -11657,20 +11696,22 @@ def subfinder():
                 "error": "Domain parameter is required"
             }), 400
 
-        command = f"subfinder -d {domain}"
+        if not _validate_target(domain):
+            return jsonify({"error": "invalid domain"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["subfinder", "-d", domain]
         if silent:
-            command += " -silent"
-
+            cmd.append("-silent")
         if all_sources:
-            command += " -all"
-
+            cmd.append("-all")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Subfinder: {domain}")
-        result = execute_command(command)
-        logger.info(f"📊 Subfinder completed for {domain}")
+        logger.info("Starting Subfinder: %s", domain)
+        result = execute_command(cmd)
+        logger.info("Subfinder completed for %s", domain)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in subfinder endpoint: {str(e)}")
@@ -11695,23 +11736,24 @@ def smbmap():
                 "error": "Target parameter is required"
             }), 400
 
-        command = f"smbmap -H {target}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["smbmap", "-H", target]
         if username:
-            command += f" -u {username}"
-
+            cmd += ["-u", username]
         if password:
-            command += f" -p {password}"
-
+            cmd += ["-p", password]
         if domain:
-            command += f" -d {domain}"
-
+            cmd += ["-d", domain]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting SMBMap: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 SMBMap completed for {target}")
+        logger.info("Starting SMBMap: %s", target)
+        result = execute_command(cmd)
+        logger.info("SMBMap completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in smbmap endpoint: {str(e)}")
@@ -11740,20 +11782,24 @@ def rustscan():
             logger.warning("🎯 Rustscan called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"rustscan -a {target} --ulimit {ulimit} -b {batch_size} -t {timeout}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if ports and not _PORT_RE.match(str(ports)):
+            return jsonify({"error": "invalid ports"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["rustscan", "-a", target, "--ulimit", str(ulimit), "-b", str(batch_size), "-t", str(timeout)]
         if ports:
-            command += f" -p {ports}"
-
+            cmd += ["-p", str(ports)]
         if scripts:
-            command += f" -- -sC -sV"
-
+            cmd += ["--", "-sC", "-sV"]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"⚡ Starting Rustscan: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 Rustscan completed for {target}")
+        logger.info("Starting Rustscan: %s", target)
+        result = execute_command(cmd)
+        logger.info("Rustscan completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in rustscan endpoint: {str(e)}")
@@ -11777,26 +11823,28 @@ def masscan():
             logger.warning("🎯 Masscan called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"masscan {target} -p{ports} --rate={rate}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if not _PORT_RE.match(str(ports)):
+            return jsonify({"error": "invalid ports"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["masscan", target, f"-p{ports}", f"--rate={rate}"]
         if interface:
-            command += f" -e {interface}"
-
+            cmd += ["-e", interface]
         if router_mac:
-            command += f" --router-mac {router_mac}"
-
-        if source_ip:
-            command += f" --source-ip {source_ip}"
-
+            cmd += ["--router-mac", router_mac]
+        if source_ip and _validate_target(source_ip):
+            cmd += ["--source-ip", source_ip]
         if banners:
-            command += " --banners"
-
+            cmd.append("--banners")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🚀 Starting Masscan: {target} at rate {rate}")
-        result = execute_command(command)
-        logger.info(f"📊 Masscan completed for {target}")
+        logger.info("Starting Masscan: %s at rate %s", target, rate)
+        result = execute_command(cmd)
+        logger.info("Masscan completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in masscan endpoint: {str(e)}")
@@ -11822,36 +11870,36 @@ def nmap_advanced():
             logger.warning("🎯 Advanced Nmap called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"nmap {scan_type} {target}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if ports and not _PORT_RE.match(str(ports)):
+            return jsonify({"error": "invalid ports"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["nmap", scan_type, target]
         if ports:
-            command += f" -p {ports}"
-
+            cmd += ["-p", str(ports)]
         if stealth:
-            command += " -T2 -f --mtu 24"
+            cmd += ["-T2", "-f", "--mtu", "24"]
         else:
-            command += f" -{timing}"
-
+            cmd.append(f"-{timing}")
         if os_detection:
-            command += " -O"
-
+            cmd.append("-O")
         if version_detection:
-            command += " -sV"
-
+            cmd.append("-sV")
         if aggressive:
-            command += " -A"
-
+            cmd.append("-A")
         if nse_scripts:
-            command += f" --script={nse_scripts}"
-        elif not aggressive:  # Default useful scripts if not aggressive
-            command += " --script=default,discovery,safe"
-
+            cmd.append(f"--script={nse_scripts}")
+        elif not aggressive:
+            cmd.append("--script=default,discovery,safe")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Advanced Nmap: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 Advanced Nmap completed for {target}")
+        logger.info("Starting Advanced Nmap: %s", target)
+        result = execute_command(cmd)
+        logger.info("Advanced Nmap completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in advanced nmap endpoint: {str(e)}")
@@ -11874,20 +11922,24 @@ def autorecon():
             logger.warning("🎯 AutoRecon called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"autorecon {target} -o {output_dir} --heartbeat {heartbeat} --timeout {timeout}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if not _validate_path(output_dir):
+            return jsonify({"error": "invalid output_dir"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["autorecon", target, "-o", output_dir, "--heartbeat", str(heartbeat), "--timeout", str(timeout)]
         if port_scans != "default":
-            command += f" --port-scans {port_scans}"
-
+            cmd += ["--port-scans", port_scans]
         if service_scans != "default":
-            command += f" --service-scans {service_scans}"
-
+            cmd += ["--service-scans", service_scans]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔄 Starting AutoRecon: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 AutoRecon completed for {target}")
+        logger.info("Starting AutoRecon: %s", target)
+        result = execute_command(cmd)
+        logger.info("AutoRecon completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in autorecon endpoint: {str(e)}")
@@ -11912,18 +11964,18 @@ def enum4linux_ng():
             logger.warning("🎯 Enum4linux-ng called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"enum4linux-ng {target}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["enum4linux-ng", target]
         if username:
-            command += f" -u {username}"
-
+            cmd += ["-u", username]
         if password:
-            command += f" -p {password}"
-
+            cmd += ["-p", password]
         if domain:
-            command += f" -d {domain}"
-
-        # Add specific enumeration options
+            cmd += ["-d", domain]
         enum_options = []
         if shares:
             enum_options.append("S")
@@ -11933,16 +11985,14 @@ def enum4linux_ng():
             enum_options.append("G")
         if policy:
             enum_options.append("P")
-
         if enum_options:
-            command += f" -A {','.join(enum_options)}"
-
+            cmd += ["-A", ",".join(enum_options)]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Enum4linux-ng: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 Enum4linux-ng completed for {target}")
+        logger.info("Starting Enum4linux-ng: %s", target)
+        result = execute_command(cmd)
+        logger.info("Enum4linux-ng completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in enum4linux-ng endpoint: {str(e)}")
@@ -11976,17 +12026,38 @@ def rpcclient():
         if domain:
             auth_string += f" -W {domain}"
 
-        # Create command sequence
-        command_sequence = commands.replace(";", "\n")
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
 
-        command = f"echo -e '{command_sequence}' | rpcclient {auth_string} {target}"
+        # Write command sequence to temp file for stdin (avoids shell injection via echo pipe)
+        import tempfile as _tf, subprocess as _subp2
+        _cmd_seq = commands.replace(";", "\n")
+        with _tf.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as _tf_obj:
+            _tf_obj.write(_cmd_seq)
+            _tf_path = _tf_obj.name
 
-        if additional_args:
-            command += f" {additional_args}"
+        rpc_cmd: list[str] = ["rpcclient"]
+        if username and password:
+            rpc_cmd += ["-U", f"{username}%{password}"]
+        elif username:
+            rpc_cmd += ["-U", username]
+        else:
+            rpc_cmd += ["-U", ""]
+        if domain:
+            rpc_cmd += ["-W", domain]
+        rpc_cmd.append(target)
 
-        logger.info(f"🔍 Starting rpcclient: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 rpcclient completed for {target}")
+        try:
+            with open(_tf_path) as _stdin_f2:
+                _proc2 = _subp2.run(rpc_cmd, stdin=_stdin_f2, capture_output=True, text=True, timeout=120)
+            result = {"success": _proc2.returncode == 0, "output": _proc2.stdout, "error": _proc2.stderr, "return_code": _proc2.returncode}
+        except Exception as _e2:
+            result = {"success": False, "output": "", "error": str(_e2), "return_code": -1}
+        finally:
+            import os as _os; _os.unlink(_tf_path)
+
+        logger.info("Starting rpcclient: %s", target)
+        logger.info("rpcclient completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in rpcclient endpoint: {str(e)}")
@@ -12006,19 +12077,21 @@ def nbtscan():
             logger.warning("🎯 nbtscan called without target parameter")
             return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"nbtscan -t {timeout}"
+        if not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["nbtscan", "-t", str(timeout)]
         if verbose:
-            command += " -v"
-
-        command += f" {target}"
-
+            cmd.append("-v")
+        cmd.append(target)
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting nbtscan: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 nbtscan completed for {target}")
+        logger.info("Starting nbtscan: %s", target)
+        result = execute_command(cmd)
+        logger.info("nbtscan completed for %s", target)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in nbtscan endpoint: {str(e)}")
@@ -12040,22 +12113,24 @@ def arp_scan():
             logger.warning("🎯 arp-scan called without target parameter")
             return jsonify({"error": "Target parameter or local_network flag is required"}), 400
 
-        command = f"arp-scan -t {timeout} -r {retry}"
+        if target and not _validate_target(target):
+            return jsonify({"error": "invalid target"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["arp-scan", "-t", str(timeout), "-r", str(retry)]
         if interface:
-            command += f" -I {interface}"
-
+            cmd += ["-I", interface]
         if local_network:
-            command += " -l"
-        else:
-            command += f" {target}"
-
+            cmd.append("-l")
+        elif target:
+            cmd.append(target)
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting arp-scan: {target if target else 'local network'}")
-        result = execute_command(command)
-        logger.info(f"📊 arp-scan completed")
+        logger.info("Starting arp-scan: %s", target if target else "local network")
+        result = execute_command(cmd)
+        logger.info("arp-scan completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in arp-scan endpoint: {str(e)}")
@@ -12078,26 +12153,26 @@ def responder():
             logger.warning("🎯 Responder called without interface parameter")
             return jsonify({"error": "Interface parameter is required"}), 400
 
-        command = f"timeout {duration} responder -I {interface}"
+        if _SHELL_META_RE.search(interface):
+            return jsonify({"error": "invalid interface"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["timeout", str(int(duration)), "responder", "-I", interface]
         if analyze:
-            command += " -A"
-
+            cmd.append("-A")
         if wpad:
-            command += " -w"
-
+            cmd.append("-w")
         if force_wpad_auth:
-            command += " -F"
-
+            cmd.append("-F")
         if fingerprint:
-            command += " -f"
-
+            cmd.append("-f")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔍 Starting Responder on interface: {interface}")
-        result = execute_command(command)
-        logger.info(f"📊 Responder completed")
+        logger.info("Starting Responder on interface: %s", interface)
+        result = execute_command(cmd)
+        logger.info("Responder completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in responder endpoint: {str(e)}")
@@ -12125,19 +12200,21 @@ def volatility():
                 "error": "Plugin parameter is required"
             }), 400
 
-        command = f"volatility -f {memory_file}"
+        if not _validate_path(memory_file):
+            return jsonify({"error": "invalid memory_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["volatility", "-f", memory_file]
         if profile:
-            command += f" --profile={profile}"
-
-        command += f" {plugin}"
-
+            cmd.append(f"--profile={profile}")
+        cmd.append(plugin)
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🧠 Starting Volatility analysis: {plugin}")
-        result = execute_command(command)
-        logger.info(f"📊 Volatility analysis completed")
+        logger.info("Starting Volatility analysis: %s", plugin)
+        result = execute_command(cmd)
+        logger.info("Volatility analysis completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in volatility endpoint: {str(e)}")
@@ -12163,26 +12240,28 @@ def msfvenom():
                 "error": "Payload parameter is required"
             }), 400
 
-        command = f"msfvenom -p {payload}"
+        if _SHELL_META_RE.search(payload):
+            return jsonify({"error": "invalid payload"}), 400
+        if output_file and not _validate_path(output_file):
+            return jsonify({"error": "invalid output_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["msfvenom", "-p", payload]
         if format_type:
-            command += f" -f {format_type}"
-
+            cmd += ["-f", format_type]
         if output_file:
-            command += f" -o {output_file}"
-
+            cmd += ["-o", output_file]
         if encoder:
-            command += f" -e {encoder}"
-
+            cmd += ["-e", encoder]
         if iterations:
-            command += f" -i {iterations}"
-
+            cmd += ["-i", str(iterations)]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🚀 Starting MSFVenom payload generation: {payload}")
-        result = execute_command(command)
-        logger.info(f"📊 MSFVenom payload generated")
+        logger.info("Starting MSFVenom payload generation: %s", payload)
+        result = execute_command(cmd)
+        logger.info("MSFVenom payload generated")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in msfvenom endpoint: {str(e)}")
@@ -12210,24 +12289,23 @@ def gdb():
                 "error": "Binary parameter is required"
             }), 400
 
-        command = f"gdb {binary}"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if script_file and not _validate_path(script_file):
+            return jsonify({"error": "invalid script_file"}), 400
 
+        cmd: list[str] = ["gdb", binary]
         if script_file:
-            command += f" -x {script_file}"
-
+            cmd += ["-x", script_file]
         if commands:
             temp_script = "/tmp/gdb_commands.txt"
             with open(temp_script, "w") as f:
                 f.write(commands)
-            command += f" -x {temp_script}"
+            cmd += ["-x", temp_script]
+        cmd.append("-batch")
 
-        if additional_args:
-            command += f" {additional_args}"
-
-        command += " -batch"
-
-        logger.info(f"🔧 Starting GDB analysis: {binary}")
-        result = execute_command(command)
+        logger.info("Starting GDB analysis: %s", binary)
+        result = execute_command(cmd)
 
         if commands and os.path.exists("/tmp/gdb_commands.txt"):
             try:
@@ -12235,7 +12313,7 @@ def gdb():
             except:
                 pass
 
-        logger.info(f"📊 GDB analysis completed for {binary}")
+        logger.info("GDB analysis completed for %s", binary)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in gdb endpoint: {str(e)}")
@@ -12258,19 +12336,19 @@ def radare2():
                 "error": "Binary parameter is required"
             }), 400
 
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+
         if commands:
             temp_script = "/tmp/r2_commands.txt"
             with open(temp_script, "w") as f:
                 f.write(commands)
-            command = f"r2 -i {temp_script} -q {binary}"
+            cmd: list[str] = ["r2", "-i", temp_script, "-q", binary]
         else:
-            command = f"r2 -q {binary}"
+            cmd = ["r2", "-q", binary]
 
-        if additional_args:
-            command += f" {additional_args}"
-
-        logger.info(f"🔧 Starting Radare2 analysis: {binary}")
-        result = execute_command(command)
+        logger.info("Starting Radare2 analysis: %s", binary)
+        result = execute_command(cmd)
 
         if commands and os.path.exists("/tmp/r2_commands.txt"):
             try:
@@ -12278,7 +12356,7 @@ def radare2():
             except:
                 pass
 
-        logger.info(f"📊 Radare2 analysis completed for {binary}")
+        logger.info("Radare2 analysis completed for %s", binary)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in radare2 endpoint: {str(e)}")
@@ -12301,19 +12379,21 @@ def binwalk():
                 "error": "File path parameter is required"
             }), 400
 
-        command = f"binwalk"
+        if not _validate_path(file_path):
+            return jsonify({"error": "invalid file_path"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["binwalk"]
         if extract:
-            command += " -e"
-
+            cmd.append("-e")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
+        cmd.append(file_path)
 
-        command += f" {file_path}"
-
-        logger.info(f"🔧 Starting Binwalk analysis: {file_path}")
-        result = execute_command(command)
-        logger.info(f"📊 Binwalk analysis completed for {file_path}")
+        logger.info("Starting Binwalk analysis: %s", file_path)
+        result = execute_command(cmd)
+        logger.info("Binwalk analysis completed for %s", file_path)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in binwalk endpoint: {str(e)}")
@@ -12336,17 +12416,20 @@ def ropgadget():
                 "error": "Binary parameter is required"
             }), 400
 
-        command = f"ROPgadget --binary {binary}"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["ROPgadget", "--binary", binary]
         if gadget_type:
-            command += f" --only '{gadget_type}'"
-
+            cmd += ["--only", gadget_type]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔧 Starting ROPgadget search: {binary}")
-        result = execute_command(command)
-        logger.info(f"📊 ROPgadget search completed for {binary}")
+        logger.info("Starting ROPgadget search: %s", binary)
+        result = execute_command(cmd)
+        logger.info("ROPgadget search completed for %s", binary)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in ropgadget endpoint: {str(e)}")
@@ -12367,11 +12450,14 @@ def checksec():
                 "error": "Binary parameter is required"
             }), 400
 
-        command = f"checksec --file={binary}"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
 
-        logger.info(f"🔧 Starting Checksec analysis: {binary}")
-        result = execute_command(command)
-        logger.info(f"📊 Checksec analysis completed for {binary}")
+        cmd: list[str] = ["checksec", f"--file={binary}"]
+
+        logger.info("Starting Checksec analysis: %s", binary)
+        result = execute_command(cmd)
+        logger.info("Checksec analysis completed for %s", binary)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in checksec endpoint: {str(e)}")
@@ -12395,19 +12481,21 @@ def xxd():
                 "error": "File path parameter is required"
             }), 400
 
-        command = f"xxd -s {offset}"
+        if not _validate_path(file_path):
+            return jsonify({"error": "invalid file_path"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["xxd", "-s", str(offset)]
         if length:
-            command += f" -l {length}"
-
+            cmd += ["-l", str(length)]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
+        cmd.append(file_path)
 
-        command += f" {file_path}"
-
-        logger.info(f"🔧 Starting XXD hex dump: {file_path}")
-        result = execute_command(command)
-        logger.info(f"📊 XXD hex dump completed for {file_path}")
+        logger.info("Starting XXD hex dump: %s", file_path)
+        result = execute_command(cmd)
+        logger.info("XXD hex dump completed for %s", file_path)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in xxd endpoint: {str(e)}")
@@ -12430,16 +12518,19 @@ def strings():
                 "error": "File path parameter is required"
             }), 400
 
-        command = f"strings -n {min_len}"
+        if not _validate_path(file_path):
+            return jsonify({"error": "invalid file_path"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["strings", "-n", str(min_len)]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
+        cmd.append(file_path)
 
-        command += f" {file_path}"
-
-        logger.info(f"🔧 Starting Strings extraction: {file_path}")
-        result = execute_command(command)
-        logger.info(f"📊 Strings extraction completed for {file_path}")
+        logger.info("Starting Strings extraction: %s", file_path)
+        result = execute_command(cmd)
+        logger.info("Strings extraction completed for %s", file_path)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in strings endpoint: {str(e)}")
@@ -12462,21 +12553,23 @@ def objdump():
                 "error": "Binary parameter is required"
             }), 400
 
-        command = f"objdump"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["objdump"]
         if disassemble:
-            command += " -d"
+            cmd.append("-d")
         else:
-            command += " -x"
-
+            cmd.append("-x")
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
+        cmd.append(binary)
 
-        command += f" {binary}"
-
-        logger.info(f"🔧 Starting Objdump analysis: {binary}")
-        result = execute_command(command)
-        logger.info(f"📊 Objdump analysis completed for {binary}")
+        logger.info("Starting Objdump analysis: %s", binary)
+        result = execute_command(cmd)
+        logger.info("Objdump analysis completed for %s", binary)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in objdump endpoint: {str(e)}")
@@ -12509,20 +12602,26 @@ def ghidra():
         os.makedirs(project_dir, exist_ok=True)
 
         # Base Ghidra command for headless analysis
-        command = f"analyzeHeadless {project_dir} {project_name} -import {binary} -deleteProject"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if not _validate_path(project_dir):
+            return jsonify({"error": "invalid project_dir"}), 400
+        if script_file and not _validate_path(script_file):
+            return jsonify({"error": "invalid script_file"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["analyzeHeadless", project_dir, project_name, "-import", binary, "-deleteProject"]
         if script_file:
-            command += f" -postScript {script_file}"
-
+            cmd += ["-postScript", script_file]
         if output_format == "xml":
-            command += f" -postScript ExportXml.java {project_dir}/analysis.xml"
-
+            cmd += ["-postScript", "ExportXml.java", f"{project_dir}/analysis.xml"]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔧 Starting Ghidra analysis: {binary}")
-        result = execute_command(command, timeout=analysis_timeout)
-        logger.info(f"📊 Ghidra analysis completed for {binary}")
+        logger.info("Starting Ghidra analysis: %s", binary)
+        result = execute_command(cmd)
+        logger.info("Ghidra analysis completed for %s", binary)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in ghidra endpoint: {str(e)}")
@@ -12583,13 +12682,15 @@ p.interactive()
             with open(script_file, "w") as f:
                 f.write(template)
 
-        command = f"python3 {script_file}"
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["python3", script_file]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔧 Starting Pwntools exploit: {exploit_type}")
-        result = execute_command(command)
+        logger.info("Starting Pwntools exploit: %s", exploit_type)
+        result = execute_command(cmd)
 
         # Cleanup
         try:
@@ -12597,7 +12698,7 @@ p.interactive()
         except:
             pass
 
-        logger.info(f"📊 Pwntools exploit completed")
+        logger.info("Pwntools exploit completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in pwntools endpoint: {str(e)}")
@@ -12616,14 +12717,18 @@ def one_gadget():
             logger.warning("🔧 one_gadget called without libc_path parameter")
             return jsonify({"error": "libc_path parameter is required"}), 400
 
-        command = f"one_gadget {libc_path} --level {level}"
+        if not _validate_path(libc_path):
+            return jsonify({"error": "invalid libc_path"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["one_gadget", libc_path, "--level", str(level)]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔧 Starting one_gadget analysis: {libc_path}")
-        result = execute_command(command)
-        logger.info(f"📊 one_gadget analysis completed")
+        logger.info("Starting one_gadget analysis: %s", libc_path)
+        result = execute_command(cmd)
+        logger.info("one_gadget analysis completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in one_gadget endpoint: {str(e)}")
@@ -12647,24 +12752,33 @@ def libc_database():
             logger.warning("🔧 libc-database called without libc_id for dump/download")
             return jsonify({"error": "libc_id parameter is required for dump/download actions"}), 400
 
-        # Navigate to libc-database directory (assuming it's installed)
-        base_command = "cd /opt/libc-database 2>/dev/null || cd ~/libc-database 2>/dev/null || echo 'libc-database not found'"
-
-        if action == "find":
-            command = f"{base_command} && ./find {symbols}"
-        elif action == "dump":
-            command = f"{base_command} && ./dump {libc_id}"
-        elif action == "download":
-            command = f"{base_command} && ./download {libc_id}"
-        else:
+        _VALID_ACTIONS = {"find", "dump", "download"}
+        if action not in _VALID_ACTIONS:
             return jsonify({"error": f"Invalid action: {action}"}), 400
+        if symbols and _SHELL_META_RE.search(symbols):
+            return jsonify({"error": "invalid symbols"}), 400
+        if libc_id and _SHELL_META_RE.search(libc_id):
+            return jsonify({"error": "invalid libc_id"}), 400
 
-        if additional_args:
-            command += f" {additional_args}"
+        # Find libc-database directory
+        import os as _os2
+        _db_dir = "/opt/libc-database" if _os2.path.isdir("/opt/libc-database") else _os2.path.expanduser("~/libc-database")
+        if action == "find":
+            cmd: list[str] = [f"{_db_dir}/find"] + symbols.split()
+        elif action == "dump":
+            cmd = [f"{_db_dir}/dump", libc_id]
+        else:
+            cmd = [f"{_db_dir}/download", libc_id]
 
-        logger.info(f"🔧 Starting libc-database {action}: {symbols or libc_id}")
-        result = execute_command(command)
-        logger.info(f"📊 libc-database {action} completed")
+        import subprocess as _subp3
+        try:
+            _pr = _subp3.run(cmd, capture_output=True, text=True, timeout=120, cwd=_db_dir)
+            result = {"success": _pr.returncode == 0, "output": _pr.stdout, "error": _pr.stderr, "return_code": _pr.returncode}
+        except Exception as _e3:
+            result = {"success": False, "output": "", "error": str(_e3), "return_code": -1}
+
+        logger.info("Starting libc-database %s: %s", action, symbols or libc_id)
+        logger.info("libc-database %s completed", action)
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in libc-database endpoint: {str(e)}")
@@ -12685,48 +12799,37 @@ def gdb_peda():
             logger.warning("🔧 GDB-PEDA called without binary, PID, or core file")
             return jsonify({"error": "Binary, PID, or core file parameter is required"}), 400
 
-        # Base GDB command with PEDA
-        command = "gdb -q"
+        if binary and not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if core_file and not _validate_path(core_file):
+            return jsonify({"error": "invalid core_file"}), 400
 
+        cmd: list[str] = ["gdb", "-q"]
         if binary:
-            command += f" {binary}"
-
+            cmd.append(binary)
         if core_file:
-            command += f" {core_file}"
-
+            cmd.append(core_file)
         if attach_pid:
-            command += f" -p {attach_pid}"
-
-        # Create command script
+            cmd += ["-p", str(attach_pid)]
         if commands:
             temp_script = "/tmp/gdb_peda_commands.txt"
-            peda_commands = f"""
-source ~/peda/peda.py
-{commands}
-quit
-"""
             with open(temp_script, "w") as f:
-                f.write(peda_commands)
-            command += f" -x {temp_script}"
+                f.write(f"source ~/peda/peda.py\n{commands}\nquit\n")
+            cmd += ["-x", temp_script]
         else:
-            # Default PEDA initialization
-            command += " -ex 'source ~/peda/peda.py' -ex 'quit'"
+            cmd += ["-ex", "source ~/peda/peda.py", "-ex", "quit"]
 
-        if additional_args:
-            command += f" {additional_args}"
+        target_info = binary or f"PID {attach_pid}" or core_file
+        logger.info("Starting GDB-PEDA analysis: %s", target_info)
+        result = execute_command(cmd)
 
-        target_info = binary or f'PID {attach_pid}' or core_file
-        logger.info(f"🔧 Starting GDB-PEDA analysis: {target_info}")
-        result = execute_command(command)
-
-        # Cleanup
         if commands and os.path.exists("/tmp/gdb_peda_commands.txt"):
             try:
                 os.remove("/tmp/gdb_peda_commands.txt")
             except:
                 pass
 
-        logger.info(f"📊 GDB-PEDA analysis completed")
+        logger.info("GDB-PEDA analysis completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in gdb-peda endpoint: {str(e)}")
@@ -12839,32 +12942,32 @@ def ropper():
             logger.warning("🔧 ropper called without binary parameter")
             return jsonify({"error": "Binary parameter is required"}), 400
 
-        command = f"ropper --file {binary}"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["ropper", "--file", binary]
         if gadget_type == "rop":
-            command += " --rop"
+            cmd.append("--rop")
         elif gadget_type == "jop":
-            command += " --jop"
+            cmd.append("--jop")
         elif gadget_type == "sys":
-            command += " --sys"
+            cmd.append("--sys")
         elif gadget_type == "all":
-            command += " --all"
-
+            cmd.append("--all")
         if quality > 1:
-            command += f" --quality {quality}"
-
+            cmd += ["--quality", str(quality)]
         if arch:
-            command += f" --arch {arch}"
-
-        if search_string:
-            command += f" --search '{search_string}'"
-
+            cmd += ["--arch", arch]
+        if search_string and not _SHELL_META_RE.search(search_string):
+            cmd += ["--search", search_string]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔧 Starting ropper analysis: {binary}")
-        result = execute_command(command)
-        logger.info(f"📊 ropper analysis completed")
+        logger.info("Starting ropper analysis: %s", binary)
+        result = execute_command(cmd)
+        logger.info("ropper analysis completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in ropper endpoint: {str(e)}")
@@ -12885,23 +12988,28 @@ def pwninit():
             logger.warning("🔧 pwninit called without binary parameter")
             return jsonify({"error": "Binary parameter is required"}), 400
 
-        command = f"pwninit --bin {binary}"
+        if not _validate_path(binary):
+            return jsonify({"error": "invalid binary"}), 400
+        if libc and not _validate_path(libc):
+            return jsonify({"error": "invalid libc"}), 400
+        if ld and not _validate_path(ld):
+            return jsonify({"error": "invalid ld"}), 400
+        if additional_args and _SHELL_META_RE.search(additional_args):
+            return jsonify({"error": "invalid additional_args"}), 400
 
+        cmd: list[str] = ["pwninit", "--bin", binary]
         if libc:
-            command += f" --libc {libc}"
-
+            cmd += ["--libc", libc]
         if ld:
-            command += f" --ld {ld}"
-
+            cmd += ["--ld", ld]
         if template_type:
-            command += f" --template {template_type}"
-
+            cmd += ["--template", template_type]
         if additional_args:
-            command += f" {additional_args}"
+            cmd += additional_args.split()
 
-        logger.info(f"🔧 Starting pwninit setup: {binary}")
-        result = execute_command(command)
-        logger.info(f"📊 pwninit setup completed")
+        logger.info("Starting pwninit setup: %s", binary)
+        result = execute_command(cmd)
+        logger.info("pwninit setup completed")
         return jsonify(result)
     except Exception as e:
         logger.error(f"💥 Error in pwninit endpoint: {str(e)}")
