@@ -9468,9 +9468,15 @@ def health_check():
 @app.route("/api/admin/panic-stop", methods=["POST"])
 @limiter.limit("3 per minute")
 def panic_stop():
-    """Emergency shutdown — production only, authenticated sessions only."""
+    """Emergency shutdown — production only, admin sessions only."""
     if _SIC_ENV != "production":
         return jsonify({"error": "panic-stop is only available when SIC_ENV=production"}), 403
+    # Admin-only gate: verify session belongs to a configured admin email
+    if get_session_email is not None:
+        from auth import _admin_emails  # noqa: PLC0415
+        admins = _admin_emails()
+        if admins and get_session_email().lower() not in admins:
+            return jsonify({"error": "admin access required"}), 403
     import signal as _sig
     logger.critical("PANIC STOP triggered")
     _sig.raise_signal(_sig.SIGTERM)
