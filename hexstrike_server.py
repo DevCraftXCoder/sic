@@ -156,6 +156,11 @@ try:
     from auth import auth_bp, get_session_email  # noqa: PLC0415
     from scan_history import scan_history_bp  # noqa: PLC0415
     app.register_blueprint(auth_bp)
+    # Explicit rate limit on magic-link endpoint (5 per minute per IP)
+    try:
+        limiter.limit("5 per minute")(app.view_functions["sic_auth.request_link"])
+    except KeyError:
+        pass  # blueprint not yet registered or route name different
     app.register_blueprint(scan_history_bp)
     logger.info("SIC P0 blueprints registered: auth, scan_history")
 except ImportError as _bp_err:
@@ -256,11 +261,55 @@ def require_auth() -> None:
     if path in public_exact or any(path.startswith(p) for p in public_prefixes):
         return None  # type: ignore[return-value]
 
-    # All /api/* routes require an authenticated session
     if path.startswith("/api/"):
-        if get_session_email is None or not get_session_email():
-            return jsonify({"error": "unauthorized"}), 401  # type: ignore[return-value]
+        session_ok = get_session_email is not None and bool(get_session_email())
+        if not session_ok:
+            # Accept Bearer API token as alternative credential
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer sic_"):
+                try:
+                    from api_tokens import verify_api_token  # noqa: PLC0415
+                    raw = auth_header[len("Bearer "):]
+                    token_row = verify_api_token(raw)
+                    if token_row is None:
+                        return jsonify({"error": "invalid_token"}), 401  # type: ignore[return-value]
+                    from flask import g as _g  # noqa: PLC0415
+                    _g.api_token = token_row
+                except ImportError:
+                    return jsonify({"error": "unauthorized"}), 401  # type: ignore[return-value]
+            else:
+                return jsonify({"error": "unauthorized"}), 401  # type: ignore[return-value]
 
+        # API token scope enforcement: write/admin scope required for mutating requests
+        from flask import g as _g  # noqa: PLC0415
+        if hasattr(_g, "api_token") and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            token_scopes = set((_g.api_token.get("scopes") or "read").split(","))
+            if not token_scopes & {"write", "admin"}:
+                return jsonify({"error": "insufficient_scope", "required": "write"}), 403  # type: ignore[return-value]
+
+    return None  # type: ignore[return-value]
+
+
+@app.before_request
+def enforce_tool_tier() -> None:
+    """Enforce subscription tier for tool execution routes.
+
+    Wires feature_gates into the tool execution boundary so tier limits are
+    enforced server-side. Community tier is allowed but limited to
+    concurrent_scans=1 (enforced by flask-limiter on the route level).
+    """
+    tool_prefixes = ("/api/tools/", "/api/intelligence/", "/api/bugbounty/")
+    if not any(request.path.startswith(p) for p in tool_prefixes):
+        return None  # type: ignore[return-value]
+    try:
+        from feature_gates import current_user_tier, get_tier_limit  # noqa: PLC0415
+        tier = current_user_tier()
+        limit = get_tier_limit(tier, "concurrent_scans")
+        # limit == 0 means tier has no tool access (not currently assigned, but safe-default)
+        if limit == 0:
+            return jsonify({"error": "tier_required", "required": "community", "current": tier}), 402  # type: ignore[return-value]
+    except Exception:  # noqa: BLE001
+        pass  # billing resolution failure never blocks tool access
     return None  # type: ignore[return-value]
 
 

@@ -126,7 +126,8 @@ def _require_auth() -> str:
     try:
         from auth import get_session_email  # noqa: PLC0415
     except ImportError:
-        return "dev@local"
+        abort(401)
+        return ""  # unreachable — satisfies type checker
     email = get_session_email()
     if not email:
         abort(401)

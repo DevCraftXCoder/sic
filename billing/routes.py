@@ -152,10 +152,10 @@ def checkout():
         return jsonify({"checkout_url": session.url}), 200
     except EnvironmentError as exc:
         logger.error("billing env misconfigured: %s", exc)
-        return jsonify({"error": "billing_unavailable", "detail": str(exc)}), 402
+        return jsonify({"error": "billing_unavailable"}), 402
     except Exception as exc:
-        logger.exception("checkout session creation failed")
-        return jsonify({"error": "internal_error", "detail": str(exc)}), 500
+        logger.error("Unhandled billing error: %s", exc, exc_info=True)
+        return jsonify({"error": "internal_error"}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -251,10 +251,10 @@ def portal():
         return jsonify({"portal_url": portal_session.url}), 200
     except EnvironmentError as exc:
         logger.error("billing env misconfigured for portal: %s", exc)
-        return jsonify({"error": "billing_unavailable", "detail": str(exc)}), 402
+        return jsonify({"error": "billing_unavailable"}), 402
     except Exception as exc:
-        logger.exception("portal session creation failed")
-        return jsonify({"error": "internal_error", "detail": str(exc)}), 500
+        logger.error("Unhandled billing error: %s", exc, exc_info=True)
+        return jsonify({"error": "internal_error"}), 500
 
 
 # ---------------------------------------------------------------------------
