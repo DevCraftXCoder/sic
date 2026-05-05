@@ -111,6 +111,7 @@ if _SIC_ENV == "production":
     if _ip_al.strip() == "127.0.0.1/8,::1":
         raise SystemExit("FATAL: SIC_ENV=production requires SIC_IP_ALLOWLIST to be set (non-default)")
 app.config['JSON_SORT_KEYS'] = False
+app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get("SIC_MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
