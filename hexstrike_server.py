@@ -9490,7 +9490,8 @@ def scope_status():
         enforcer = get_enforcer()
         return jsonify(enforcer.status())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("scope_status error: %s", str(e))
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 
 @app.route("/api/command", methods=["POST"])
