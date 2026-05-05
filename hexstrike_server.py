@@ -103,7 +103,23 @@ logger = logging.getLogger(__name__)
 # Flask app configuration
 app = Flask(__name__)
 app.secret_key = os.environ.get("SIC_SECRET_KEY") or os.urandom(32)
+_SIC_ENV = os.environ.get("SIC_ENV", "development")
+if _SIC_ENV == "production":
+    if not os.environ.get("SIC_SECRET_KEY"):
+        raise SystemExit("FATAL: SIC_ENV=production requires SIC_SECRET_KEY to be set explicitly")
+    _ip_al = os.environ.get("SIC_IP_ALLOWLIST", "127.0.0.1/8,::1")
+    if _ip_al.strip() == "127.0.0.1/8,::1":
+        raise SystemExit("FATAL: SIC_ENV=production requires SIC_IP_ALLOWLIST to be set (non-default)")
 app.config['JSON_SORT_KEYS'] = False
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get("SIC_MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per minute"],
+    storage_uri="memory://",
+)
 
 
 def _load_sic_config() -> dict:
@@ -9388,6 +9404,18 @@ def health_check():
     })
 
 
+@app.route("/api/admin/panic-stop", methods=["POST"])
+@limiter.limit("3 per minute")
+def panic_stop():
+    """Emergency shutdown — production only, authenticated sessions only."""
+    if _SIC_ENV != "production":
+        return jsonify({"error": "panic-stop is only available when SIC_ENV=production"}), 403
+    import signal as _sig
+    logger.critical("PANIC STOP triggered")
+    _sig.raise_signal(_sig.SIGTERM)
+    return jsonify({"ok": True, "message": "Server shutting down"})
+
+
 @app.route("/api/scope/status", methods=["GET"])
 def scope_status():
     """Return current scope enforcer configuration and request count."""
@@ -9399,27 +9427,39 @@ def scope_status():
 
 
 @app.route("/api/command", methods=["POST"])
+@limiter.limit("60 per minute")
 def generic_command():
-    """Execute any command provided in the request with enhanced logging"""
+    """Execute command — allowlisted in production, unrestricted in dev."""
     try:
-        params = request.json
+        params = request.json or {}
         command = params.get("command", "")
         use_cache = params.get("use_cache", True)
 
         if not command:
-            logger.warning("⚠️  Command endpoint called without command parameter")
-            return jsonify({
-                "error": "Command parameter is required"
-            }), 400
+            logger.warning("Command endpoint called without command parameter")
+            return jsonify({"error": "Command parameter is required"}), 400
+
+        if _SIC_ENV == "production":
+            allowlist_raw = os.environ.get("SIC_COMMAND_ALLOWLIST", "")
+            if not allowlist_raw:
+                logger.error("/api/command blocked — SIC_COMMAND_ALLOWLIST not set in production")
+                return jsonify({"error": "Command endpoint is not configured for production use"}), 503
+            allowed = {b.strip() for b in allowlist_raw.split(",") if b.strip()}
+            first_token = command.split()[0] if command.split() else ""
+            if first_token not in allowed:
+                logger.warning("Blocked command — binary not in allowlist: %s", first_token)
+                return jsonify({"error": "Command not permitted"}), 403
 
         result = execute_command(command, use_cache=use_cache)
+        try:
+            from audit_log import audit_log as _al
+            _al("command_executed", command=command)
+        except ImportError:
+            pass
         return jsonify(result)
     except Exception as e:
-        logger.error(f"💥 Error in command endpoint: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({
-            "error": f"Server error: {str(e)}"
-        }), 500
+        logger.error("Error in command endpoint: %s", str(e))
+        return jsonify({"error": "Server error"}), 500
 
 # File Operations API Endpoints
 
@@ -17358,33 +17398,6 @@ def ctf_binary_analyzer():
 # ADVANCED PROCESS MANAGEMENT API ENDPOINTS (v10.0 ENHANCEMENT)
 # ============================================================================
 
-@app.route("/api/process/execute-async", methods=["POST"])
-def execute_command_async():
-    """Execute command asynchronously using enhanced process management"""
-    try:
-        params = request.json
-        command = params.get("command", "")
-        context = params.get("context", {})
-
-        if not command:
-            return jsonify({"error": "Command parameter is required"}), 400
-
-        # Execute command asynchronously
-        task_id = enhanced_process_manager.execute_command_async(command, context)
-
-        logger.info(f"🚀 Async command execution started | Task ID: {task_id}")
-        return jsonify({
-            "success": True,
-            "task_id": task_id,
-            "command": command,
-            "status": "submitted",
-            "timestamp": datetime.now().isoformat()
-        })
-
-    except Exception as e:
-        logger.error(f"💥 Error in async command execution: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
-
 @app.route("/api/process/get-task-result/<task_id>", methods=["GET"])
 def get_async_task_result(task_id):
     """Get result of asynchronous task"""
@@ -17919,6 +17932,16 @@ def get_alternative_tools():
 
 # Create the banner after all classes are defined
 BANNER = ModernVisualEngine.create_banner()
+
+
+@app.errorhandler(Exception)
+def handle_unhandled_exception(e: Exception):
+    logger.error("Unhandled exception: %s", e, exc_info=True)
+    if _SIC_ENV == "production":
+        return jsonify({"error": "Internal server error"}), 500
+    import traceback as _tb
+    return jsonify({"error": str(e), "traceback": _tb.format_exc()}), 500
+
 
 if __name__ == "__main__":
     # Display the beautiful new banner
