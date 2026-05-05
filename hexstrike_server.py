@@ -205,6 +205,48 @@ except ImportError as e:
     logger.warning("api_tokens blueprint unavailable: %s", e)
 
 
+@app.before_request
+def require_auth() -> None:
+    """Global auth + IP allowlist enforcement for all /api/* routes."""
+    import ipaddress as _ipa  # noqa: PLC0415
+
+    # --- IP allowlist ---
+    allowed_ips: list[str] = SIC_CONFIG.get("security", {}).get("ipAllowlist", [])
+    if allowed_ips:
+        allowed_networks: list[_ipa.IPv4Network | _ipa.IPv6Network] = []
+        for ip_str in allowed_ips:
+            ip_str = ip_str.strip()
+            try:
+                allowed_networks.append(_ipa.ip_network(ip_str, strict=False))
+            except ValueError:
+                app.logger.warning("Invalid IP in SIC_IP_ALLOWLIST: %s", ip_str)
+
+        if allowed_networks:
+            try:
+                incoming = _ipa.ip_address(request.remote_addr or "127.0.0.1")
+            except ValueError:
+                return jsonify({"error": "IP not in allowlist"}), 403  # type: ignore[return-value]
+
+            if not any(incoming in net for net in allowed_networks):
+                return jsonify({"error": "IP not in allowlist"}), 403  # type: ignore[return-value]
+
+    # --- Auth check for /api/* routes ---
+    path = request.path
+
+    # Public paths — no auth required
+    public_prefixes = ("/health", "/static/", "/api/auth/")
+    public_exact = {"/", "/dashboard/login.html", "/dashboard/"}
+    if path in public_exact or any(path.startswith(p) for p in public_prefixes):
+        return None  # type: ignore[return-value]
+
+    # All /api/* routes require an authenticated session
+    if path.startswith("/api/"):
+        if get_session_email is None or not get_session_email():
+            return jsonify({"error": "unauthorized"}), 401  # type: ignore[return-value]
+
+    return None  # type: ignore[return-value]
+
+
 @app.route("/dashboard/", defaults={"filename": "index.html"})
 @app.route("/dashboard/<path:filename>")
 def serve_dashboard(filename):
@@ -8760,18 +8802,71 @@ cve_intelligence = CVEIntelligenceManager()
 exploit_generator = AIExploitGenerator()
 vulnerability_correlator = VulnerabilityCorrelator()
 
-def execute_command(command: str, use_cache: bool = True) -> Dict[str, Any]:
+def execute_command(command, use_cache: bool = True) -> Dict[str, Any]:
     """
-    Execute a shell command with enhanced features
+    Execute a shell command with enhanced features.
 
     Args:
-        command: The command to execute
-        use_cache: Whether to use caching for this command
+        command: str (legacy shell=True path) OR list[str] (safe shell=False path).
+                 Always pass a list when any element derives from user input.
+        use_cache: Whether to use caching for this command.
 
     Returns:
-        A dictionary containing the stdout, stderr, return code, and metadata
+        A dictionary containing the stdout, stderr, return code, and metadata.
     """
+    import subprocess as _subprocess  # noqa: PLC0415
 
+    # --- Safe list-based path (preferred for user-supplied params) ---
+    if isinstance(command, list):
+        # Scope enforcement before execution
+        enforcer = get_enforcer()
+        scope_result = enforcer.safe_request(
+            " ".join(command),
+            context={"user": getattr(request, "remote_addr", "unknown")},
+        )
+        if not scope_result.get("success", True):
+            return {
+                "success": False,
+                "output": "",
+                "error": f"Scope check failed: {scope_result.get('reason', 'Denied')}",
+                "return_code": -1,
+            }
+
+        cache_key = " ".join(command)
+        if use_cache:
+            cached_result = cache.get(cache_key, {})
+            if cached_result:
+                return cached_result
+
+        try:
+            proc = _subprocess.run(
+                command,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=COMMAND_TIMEOUT,
+            )
+            result: Dict[str, Any] = {
+                "success": proc.returncode == 0,
+                "output": proc.stdout,
+                "error": proc.stderr,
+                "return_code": proc.returncode,
+            }
+        except _subprocess.TimeoutExpired:
+            result = {
+                "success": False,
+                "output": "",
+                "error": f"Command timed out after {COMMAND_TIMEOUT}s",
+                "return_code": -1,
+            }
+        except Exception as exc:  # noqa: BLE001
+            result = {"success": False, "output": "", "error": str(exc), "return_code": -1}
+
+        if use_cache and result.get("success", False):
+            cache.set(cache_key, {}, result)
+        return result
+
+    # --- Legacy string path (shell=True) — only for non-user-input commands ---
     # Check cache first
     if use_cache:
         cached_result = cache.get(command, {})
@@ -8787,6 +8882,34 @@ def execute_command(command: str, use_cache: bool = True) -> Dict[str, Any]:
         cache.set(command, {}, result)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Input validation helpers for tool routes
+# ---------------------------------------------------------------------------
+
+import re as _re  # noqa: E402, PLC0415
+
+# Allows hostnames, IPs (v4/v6), CIDRs, and simple URL paths (no shell chars).
+_TARGET_RE = _re.compile(r"^[a-zA-Z0-9.\-_:/\[\]]+$")
+# Allows file-system paths for wordlists, hash files, etc.
+_PATH_RE = _re.compile(r"^[a-zA-Z0-9.\-_:/\\]+$")
+# Allows a port spec like "80", "1-1024", or "80,443".
+_PORT_RE = _re.compile(r"^[0-9,\-]+$")
+
+
+def _validate_target(value: str, max_len: int = 256) -> bool:
+    """Return True if *value* is a safe scan target (no shell metacharacters)."""
+    if not value or len(value) > max_len:
+        return False
+    return bool(_TARGET_RE.match(value))
+
+
+def _validate_path(value: str, max_len: int = 512) -> bool:
+    """Return True if *value* is a safe file-system path."""
+    if not value or len(value) > max_len:
+        return False
+    return bool(_PATH_RE.match(value))
 
 def execute_command_with_recovery(tool_name: str, command: str, parameters: Dict[str, Any] = None,
                                  use_cache: bool = True, max_attempts: int = 3) -> Dict[str, Any]:
@@ -10468,49 +10591,33 @@ def nmap():
     try:
         params = request.json
         target = params.get("target", "")
-        scan_type = params.get("scan_type", "-sCV")
         ports = params.get("ports", "")
-        additional_args = params.get("additional_args", "-T4 -Pn")
-        use_recovery = params.get("use_recovery", True)
 
         if not target:
-            logger.warning("🎯 Nmap called without target parameter")
-            return jsonify({
-                "error": "Target parameter is required"
-            }), 400
+            logger.warning("Nmap called without target parameter")
+            return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"nmap {scan_type}"
+        if not _validate_target(target):
+            logger.warning("Nmap called with invalid target: %s", target)
+            return jsonify({"error": "Invalid target format"}), 400
 
+        if ports and not _PORT_RE.match(ports):
+            return jsonify({"error": "Invalid ports format"}), 400
+
+        # Build command as a list — no shell interpolation
+        cmd: list[str] = ["nmap", "-sCV", "-T4", "-Pn"]
         if ports:
-            command += f" -p {ports}"
+            cmd += ["-p", ports]
+        cmd.append(target)
 
-        if additional_args:
-            command += f" {additional_args}"
-
-        command += f" {target}"
-
-        logger.info(f"🔍 Starting Nmap scan: {target}")
-
-        # Use intelligent error handling if enabled
-        if use_recovery:
-            tool_params = {
-                "target": target,
-                "scan_type": scan_type,
-                "ports": ports,
-                "additional_args": additional_args
-            }
-            result = execute_command_with_recovery("nmap", command, tool_params)
-        else:
-            result = execute_command(command)
-
-        logger.info(f"📊 Nmap scan completed for {target}")
+        logger.info("Starting Nmap scan: %s", target)
+        result = execute_command(cmd)
+        logger.info("Nmap scan completed for %s", target)
         return jsonify(result)
 
     except Exception as e:
-        logger.error(f"💥 Error in nmap endpoint: {str(e)}")
-        return jsonify({
-            "error": f"Server error: {str(e)}"
-        }), 500
+        logger.error("Error in nmap endpoint: %s", str(e))
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route("/api/tools/gobuster", methods=["POST"])
 def gobuster():
@@ -10520,42 +10627,25 @@ def gobuster():
         url = params.get("url", "")
         mode = params.get("mode", "dir")
         wordlist = params.get("wordlist", "/usr/share/wordlists/dirb/common.txt")
-        additional_args = params.get("additional_args", "")
-        use_recovery = params.get("use_recovery", True)
 
         if not url:
-            logger.warning("🌐 Gobuster called without URL parameter")
-            return jsonify({
-                "error": "URL parameter is required"
-            }), 400
+            logger.warning("Gobuster called without URL parameter")
+            return jsonify({"error": "URL parameter is required"}), 400
 
-        # Validate mode
-        if mode not in ["dir", "dns", "fuzz", "vhost"]:
-            logger.warning(f"❌ Invalid gobuster mode: {mode}")
-            return jsonify({
-                "error": f"Invalid mode: {mode}. Must be one of: dir, dns, fuzz, vhost"
-            }), 400
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "Invalid URL format"}), 400
 
-        command = f"gobuster {mode} -u {url} -w {wordlist}"
+        if mode not in ("dir", "dns", "fuzz", "vhost"):
+            return jsonify({"error": f"Invalid mode: {mode}. Must be one of: dir, dns, fuzz, vhost"}), 400
 
-        if additional_args:
-            command += f" {additional_args}"
+        if not _validate_path(wordlist):
+            return jsonify({"error": "Invalid wordlist path"}), 400
 
-        logger.info(f"📁 Starting Gobuster {mode} scan: {url}")
+        cmd: list[str] = ["gobuster", mode, "-u", url, "-w", wordlist]
 
-        # Use intelligent error handling if enabled
-        if use_recovery:
-            tool_params = {
-                "target": url,
-                "mode": mode,
-                "wordlist": wordlist,
-                "additional_args": additional_args
-            }
-            result = execute_command_with_recovery("gobuster", command, tool_params)
-        else:
-            result = execute_command(command)
-
-        logger.info(f"📊 Gobuster scan completed for {url}")
+        logger.info("Starting Gobuster %s scan: %s", mode, url)
+        result = execute_command(cmd)
+        logger.info("Gobuster scan completed for %s", url)
         return jsonify(result)
 
     except Exception as e:
@@ -11158,31 +11248,28 @@ def sqlmap():
         params = request.json
         url = params.get("url", "")
         data = params.get("data", "")
-        additional_args = params.get("additional_args", "")
 
         if not url:
-            logger.warning("🎯 SQLMap called without URL parameter")
-            return jsonify({
-                "error": "URL parameter is required"
-            }), 400
+            logger.warning("SQLMap called without URL parameter")
+            return jsonify({"error": "URL parameter is required"}), 400
 
-        command = f"sqlmap -u {url} --batch"
+        if not _validate_target(url, max_len=2048):
+            return jsonify({"error": "Invalid URL format"}), 400
 
+        cmd: list[str] = ["sqlmap", "-u", url, "--batch"]
         if data:
-            command += f" --data=\"{data}\""
+            # data goes as separate arg — no shell, no injection
+            if len(data) > 4096:
+                return jsonify({"error": "data parameter too long"}), 400
+            cmd += ["--data", data]
 
-        if additional_args:
-            command += f" {additional_args}"
-
-        logger.info(f"💉 Starting SQLMap scan: {url}")
-        result = execute_command(command)
-        logger.info(f"📊 SQLMap scan completed for {url}")
+        logger.info("Starting SQLMap scan: %s", url)
+        result = execute_command(cmd)
+        logger.info("SQLMap scan completed for %s", url)
         return jsonify(result)
     except Exception as e:
-        logger.error(f"💥 Error in sqlmap endpoint: {str(e)}")
-        return jsonify({
-            "error": f"Server error: {str(e)}"
-        }), 500
+        logger.error("Error in sqlmap endpoint: %s", str(e))
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route("/api/tools/metasploit", methods=["POST"])
 def metasploit():
@@ -11239,46 +11326,51 @@ def hydra():
         username_file = params.get("username_file", "")
         password = params.get("password", "")
         password_file = params.get("password_file", "")
-        additional_args = params.get("additional_args", "")
 
         if not target or not service:
-            logger.warning("🎯 Hydra called without target or service parameter")
-            return jsonify({
-                "error": "Target and service parameters are required"
-            }), 400
+            logger.warning("Hydra called without target or service parameter")
+            return jsonify({"error": "Target and service parameters are required"}), 400
+
+        if not _validate_target(target):
+            return jsonify({"error": "Invalid target format"}), 400
+
+        # Validate service is an identifier (no shell chars)
+        if not _re.match(r"^[a-zA-Z0-9\-]+$", service):
+            return jsonify({"error": "Invalid service format"}), 400
 
         if not (username or username_file) or not (password or password_file):
-            logger.warning("🔑 Hydra called without username/password parameters")
-            return jsonify({
-                "error": "Username/username_file and password/password_file are required"
-            }), 400
+            logger.warning("Hydra called without username/password parameters")
+            return jsonify({"error": "Username/username_file and password/password_file are required"}), 400
 
-        command = f"hydra -t 4"
+        cmd: list[str] = ["hydra", "-t", "4"]
 
         if username:
-            command += f" -l {username}"
+            if len(username) > 256:
+                return jsonify({"error": "username too long"}), 400
+            cmd += ["-l", username]
         elif username_file:
-            command += f" -L {username_file}"
+            if not _validate_path(username_file):
+                return jsonify({"error": "Invalid username_file path"}), 400
+            cmd += ["-L", username_file]
 
         if password:
-            command += f" -p {password}"
+            if len(password) > 256:
+                return jsonify({"error": "password too long"}), 400
+            cmd += ["-p", password]
         elif password_file:
-            command += f" -P {password_file}"
+            if not _validate_path(password_file):
+                return jsonify({"error": "Invalid password_file path"}), 400
+            cmd += ["-P", password_file]
 
-        if additional_args:
-            command += f" {additional_args}"
+        cmd += [target, service]
 
-        command += f" {target} {service}"
-
-        logger.info(f"🔑 Starting Hydra attack: {target}:{service}")
-        result = execute_command(command)
-        logger.info(f"📊 Hydra attack completed for {target}")
+        logger.info("Starting Hydra attack: %s:%s", target, service)
+        result = execute_command(cmd)
+        logger.info("Hydra attack completed for %s", target)
         return jsonify(result)
     except Exception as e:
-        logger.error(f"💥 Error in hydra endpoint: {str(e)}")
-        return jsonify({
-            "error": f"Server error: {str(e)}"
-        }), 500
+        logger.error("Error in hydra endpoint: %s", str(e))
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route("/api/tools/john", methods=["POST"])
 def john():
@@ -11428,40 +11520,47 @@ def netexec():
         password = params.get("password", "")
         hash_value = params.get("hash", "")
         module = params.get("module", "")
-        additional_args = params.get("additional_args", "")
 
         if not target:
-            logger.warning("🎯 NetExec called without target parameter")
-            return jsonify({
-                "error": "Target parameter is required"
-            }), 400
+            logger.warning("NetExec called without target parameter")
+            return jsonify({"error": "Target parameter is required"}), 400
 
-        command = f"nxc {protocol} {target}"
+        if not _validate_target(target):
+            return jsonify({"error": "Invalid target format"}), 400
+
+        allowed_protocols = {"smb", "ssh", "winrm", "mssql", "ldap", "rdp", "ftp"}
+        if protocol not in allowed_protocols:
+            return jsonify({"error": f"Invalid protocol. Must be one of: {', '.join(sorted(allowed_protocols))}"}), 400
+
+        cmd: list[str] = ["nxc", protocol, target]
 
         if username:
-            command += f" -u {username}"
+            if len(username) > 256:
+                return jsonify({"error": "username too long"}), 400
+            cmd += ["-u", username]
 
         if password:
-            command += f" -p {password}"
+            if len(password) > 256:
+                return jsonify({"error": "password too long"}), 400
+            cmd += ["-p", password]
 
         if hash_value:
-            command += f" -H {hash_value}"
+            if not _re.match(r"^[a-fA-F0-9:]+$", hash_value) or len(hash_value) > 65:
+                return jsonify({"error": "Invalid hash format"}), 400
+            cmd += ["-H", hash_value]
 
         if module:
-            command += f" -M {module}"
+            if not _re.match(r"^[a-zA-Z0-9_\-]+$", module) or len(module) > 64:
+                return jsonify({"error": "Invalid module name"}), 400
+            cmd += ["-M", module]
 
-        if additional_args:
-            command += f" {additional_args}"
-
-        logger.info(f"🔍 Starting NetExec {protocol} scan: {target}")
-        result = execute_command(command)
-        logger.info(f"📊 NetExec scan completed for {target}")
+        logger.info("Starting NetExec %s scan: %s", protocol, target)
+        result = execute_command(cmd)
+        logger.info("NetExec scan completed for %s", target)
         return jsonify(result)
     except Exception as e:
-        logger.error(f"💥 Error in netexec endpoint: {str(e)}")
-        return jsonify({
-            "error": f"Server error: {str(e)}"
-        }), 500
+        logger.error("Error in netexec endpoint: %s", str(e))
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route("/api/tools/amass", methods=["POST"])
 def amass():
