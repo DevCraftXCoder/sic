@@ -8887,17 +8887,16 @@ def execute_command(command, use_cache: bool = True) -> Dict[str, Any]:
 
     # --- Safe list-based path (preferred for user-supplied params) ---
     if isinstance(command, list):
-        # Scope enforcement before execution
+        # Scope enforcement before execution — extract probable target (last non-flag arg)
         enforcer = get_enforcer()
-        scope_result = enforcer.safe_request(
-            " ".join(command),
-            context={"user": getattr(request, "remote_addr", "unknown")},
-        )
-        if not scope_result.get("success", True):
+        target = next((a for a in reversed(command) if not a.startswith('-')), "")
+        target_url = target if "://" in target else f"http://{target}"
+        scope_ok, scope_reason = enforcer.check_request("GET", target_url)
+        if not scope_ok:
             return {
                 "success": False,
                 "output": "",
-                "error": f"Scope check failed: {scope_result.get('reason', 'Denied')}",
+                "error": f"Scope check failed: {scope_reason}",
                 "return_code": -1,
             }
 
