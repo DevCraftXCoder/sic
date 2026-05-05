@@ -102,6 +102,7 @@ logger = logging.getLogger(__name__)
 
 # Flask app configuration
 app = Flask(__name__)
+app.secret_key = os.environ.get("SIC_SECRET_KEY") or os.urandom(32)
 app.config['JSON_SORT_KEYS'] = False
 
 
@@ -8897,7 +8898,7 @@ _PATH_RE = _re.compile(r"^[a-zA-Z0-9.\-_:/\\]+$")
 # Allows a port spec like "80", "1-1024", or "80,443".
 _PORT_RE = _re.compile(r"^[0-9,\-]+$")
 # Shell metacharacters that must never appear in passthrough args.
-_SHELL_META_RE = _re.compile(r"[;|&`$<>(){}\[\]\]")
+_SHELL_META_RE = _re.compile(r"[;|&`$<>(){}\[\]]")
 
 
 def _validate_target(value: str, max_len: int = 256) -> bool:
@@ -17952,7 +17953,7 @@ if __name__ == "__main__":
         if line.strip():
             logger.info(line)
 
-    app.run(host="0.0.0.0", port=API_PORT, debug=DEBUG_MODE)
+    app.run(host=API_HOST, port=API_PORT, debug=DEBUG_MODE)
 
 
 # ── Logo upload routes ─────────────────────────────────────────────────────────
