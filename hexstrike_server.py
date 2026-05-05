@@ -113,6 +113,7 @@ if _SIC_ENV == "production":
 app.config['JSON_SORT_KEYS'] = False
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get("SIC_MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 from flask_limiter import Limiter
+from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
 limiter = Limiter(
     get_remote_address,
@@ -158,7 +159,9 @@ try:
     app.register_blueprint(auth_bp)
     # Explicit rate limit on magic-link endpoint (5 per minute per IP)
     try:
-        limiter.limit("5 per minute")(app.view_functions["sic_auth.request_link"])
+        app.view_functions["sic_auth.request_link"] = limiter.limit("5 per minute")(
+            app.view_functions["sic_auth.request_link"]
+        )
     except KeyError:
         pass  # blueprint not yet registered or route name different
     app.register_blueprint(scan_history_bp)
@@ -17985,6 +17988,9 @@ BANNER = ModernVisualEngine.create_banner()
 
 @app.errorhandler(Exception)
 def handle_unhandled_exception(e: Exception):
+    # Rate limit exceeded — check by attribute to avoid class identity issues
+    if getattr(e, "code", None) == 429 or type(e).__name__ == "RateLimitExceeded":
+        return jsonify({"error": "rate_limit_exceeded", "detail": "Too many requests."}), 429
     logger.error("Unhandled exception: %s", e, exc_info=True)
     if _SIC_ENV == "production":
         return jsonify({"error": "Internal server error"}), 500
