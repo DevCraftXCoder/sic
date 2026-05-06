@@ -355,13 +355,15 @@ This is a private tool shared among trusted peers. If you have access, you alrea
 
 ## Recent Additions
 
+- **Security hardening (v6.0.0)** — 38 tool routes patched for shell injection safety; zero injection vectors remain across all endpoints
+- **Per-service API tokens** — Individual tokens per integrated service with expiry warnings (#25 token-expiry system)
+- **Rate limiting** — All endpoints rate-limited; 25 CVEs addressed via pip-audit dependency audit
+- **Admin panic-stop** — Admin role gate on `/api/admin/panic-stop` (was unauthenticated)
+- **Generic error responses** — P0 scope_status and internal error details no longer leaked to API consumers
+- **Auth/tier/scope enforcement** — P1 complete: request validation wired across all tool routes
+- **Claude Code `/sic` command** — Direct Claude Code integration for interactive pentesting sessions (#27)
+- **Bugs archive endpoint** — `GET /api/bugs-archive` for historical bug/finding retrieval (#10)
 - **Zero-Trust IP Allowlisting** — All admin operations locked behind IP allowlisting; IPv6 prefix matching requires minimum /64 specificity
-- **Sandbox Architecture section** — Container security controls documented: 12 controls including `cap_drop: ALL`, non-root user, DNS lockdown, CPU/memory limits
-- **Complete Docker build context** — `hexstrike_launcher` + `requirements-core` added; multi-stage build (Go builder → Python builder → runtime)
-- **Scope enforcer** — `ALLOWED_TARGETS` whitelist enforced at app layer; requests outside the whitelist rejected before tool execution
-- **Discord alerts** — Scan completion + critical finding notifications via webhook
-- **Docker compatibility** — selenium/mitmproxy imports guarded for Docker environments where browser tools are stubbed
-- **SECURITY.md + .gitignore** — Responsible disclosure policy; internal URLs scrubbed from all public-facing documentation
 
 ---
 
