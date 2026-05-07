@@ -316,7 +316,7 @@ for old, new in patches:
         print(f"NOT FOUND: {repr(old[:80])}")
     else:
         content = content.replace(old, new, 1)
-        print(f"Patched OK")
+        print("Patched OK")
 
 with open('hexstrike_server.py', 'w', encoding='utf-8') as f:
     f.write(content)
