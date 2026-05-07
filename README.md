@@ -355,6 +355,7 @@ This is a private tool shared among trusted peers. If you have access, you alrea
 
 ## Recent Additions
 
+- **Payment system + billing hardening** — SIC subscription management; public-checkout endpoint secured with exact-match auth allowlist; email removed from checkout URLs
 - **Security hardening (v6.0.0)** — 38 tool routes patched for shell injection safety; zero injection vectors remain across all endpoints
 - **Per-service API tokens** — Individual tokens per integrated service with expiry warnings (#25 token-expiry system)
 - **Rate limiting** — All endpoints rate-limited; 25 CVEs addressed via pip-audit dependency audit
@@ -362,7 +363,6 @@ This is a private tool shared among trusted peers. If you have access, you alrea
 - **Generic error responses** — P0 scope_status and internal error details no longer leaked to API consumers
 - **Auth/tier/scope enforcement** — P1 complete: request validation wired across all tool routes
 - **Claude Code `/sic` command** — Direct Claude Code integration for interactive pentesting sessions (#27)
-- **Bugs archive endpoint** — `GET /api/bugs-archive` for historical bug/finding retrieval (#10)
 - **Zero-Trust IP Allowlisting** — All admin operations locked behind IP allowlisting; IPv6 prefix matching requires minimum /64 specificity
 
 ---
