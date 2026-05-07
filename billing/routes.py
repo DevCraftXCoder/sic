@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request
 
 from auth import get_session_email, require_auth
 
@@ -473,3 +473,76 @@ def _handle_payment_failed(event, email: str | None) -> None:
     logger.warning(
         "payment failed — marked past_due for email=%.6s***", email[:6]
     )
+
+
+# ---------------------------------------------------------------------------
+# Public (unauthenticated) checkout — for visitors on sic-signup.html
+# ---------------------------------------------------------------------------
+
+
+@billing_bp.post("/public-checkout")
+def public_checkout():
+    """Public (unauthenticated) checkout — for visitors on the sic-signup page.
+
+    Body JSON:
+        {"email": "user@example.com", "tier": "team" | "studio"}
+
+    Rate limited by IP via before_request (no per-route limiter needed here).
+
+    Returns:
+        200  {"checkout_url": "https://checkout.stripe.com/..."}
+        400  {"error": "invalid_tier"} | {"error": "missing_email"}
+        402  {"error": "billing_unavailable"}
+        500  {"error": "internal_error"}
+    """
+    import re as _re  # noqa: PLC0415
+
+    init_db()
+    body = request.get_json(silent=True) or {}
+    tier = body.get("tier")
+    email = (body.get("email") or "").strip().lower()
+
+    if not email or not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify(
+            {"error": "missing_email", "detail": "A valid email is required."}
+        ), 400
+
+    if tier not in _VALID_PAID_TIERS:
+        return jsonify(
+            {
+                "error": "invalid_tier",
+                "detail": f"tier must be one of: {sorted(_VALID_PAID_TIERS)}",
+            }
+        ), 400
+
+    # Check if this email already has an active subscription
+    sub = get_subscription(email)
+    customer_id: str | None = sub["stripe_customer_id"] if sub else None
+
+    base = _base_url()
+    success_url = f"{base}/api/billing/public-checkout-success?tier={tier}"
+    cancel_url = f"{base}/sic-signup?billing=cancelled"
+
+    try:
+        session = create_checkout_session(
+            email=email,
+            tier=tier,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            customer_id=customer_id,
+        )
+        return jsonify({"checkout_url": session.url}), 200
+    except EnvironmentError as exc:
+        logger.error("billing env misconfigured: %s", exc)
+        return jsonify({"error": "billing_unavailable"}), 402
+    except Exception as exc:
+        logger.error("Unhandled billing error: %s", exc, exc_info=True)
+        return jsonify({"error": "internal_error"}), 500
+
+
+@billing_bp.get("/public-checkout-success")
+def public_checkout_success():
+    """Redirect after Stripe checkout — return user to sic-signup with success state."""
+    tier = request.args.get("tier", "team")
+    base = _base_url()
+    return redirect(f"{base}/sic-signup?billing=success&tier={tier}")
