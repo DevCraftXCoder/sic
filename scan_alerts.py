@@ -40,6 +40,9 @@ _TITLES: dict[str, str] = {
 # Events that trigger email and deduplication
 _EMAIL_EVENTS: frozenset[str] = frozenset({"critical_finding", "unauthorized_attempt"})
 
+# Events that trigger magic-link delivery email
+_MAGIC_LINK_EVENT = "auth_link_issued"
+
 # ---------------------------------------------------------------------------
 # Lazy-init URL / config helpers
 # ---------------------------------------------------------------------------
@@ -271,6 +274,109 @@ def _fire_webhook_generic(event: str, details: dict[str, Any]) -> None:
         logger.debug("Generic webhook delivery failed for event '%s'", event, exc_info=True)
 
 
+def _fire_magic_link_email(details: dict[str, Any]) -> None:
+    """Deliver a magic-link email to the requesting user.
+
+    Tries Resend API first, falls back to smtplib.
+    Failures are logged but never propagate — auth flow must not block.
+
+    Expected keys in *details*:
+        email (str)      — recipient address
+        link (str)       — full magic-link URL
+        expires_at (int) — Unix timestamp when the link expires
+    """
+    recipient = details.get("email")
+    link = details.get("link")
+    if not recipient or not link:
+        logger.debug("_fire_magic_link_email: missing email or link in details")
+        return
+
+    from_addr = os.environ.get("SIC_ALERT_FROM", "sic-alerts@hexstrike.ai")
+    subject = "Your SIC login link"
+    html_body = (
+        "<html><body>"
+        "<h2 style='color:#e94560;font-family:sans-serif'>SIC — Magic Link Login</h2>"
+        "<p style='font-family:sans-serif'>Click the link below to sign in to SIC. "
+        "It is valid for <strong>10 minutes</strong> and can only be used once.</p>"
+        f"<p><a href='{link}' style='font-family:monospace;font-size:14px'>{link}</a></p>"
+        "<p style='color:#888;font-size:12px;font-family:sans-serif'>"
+        "If you did not request this link, you can safely ignore this email.</p>"
+        "<hr style='border:none;border-top:1px solid #333;margin-top:24px'>"
+        "<p style='color:#888;font-size:11px;font-family:sans-serif'>SIC &bull; HexStrike AI</p>"
+        "</body></html>"
+    )
+    text_body = (
+        f"Your SIC login link: {link}\n"
+        "Valid for 10 minutes. Do not share this link.\n\n"
+        "If you did not request this, ignore this email."
+    )
+
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if resend_key:
+        try:
+            resp = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": from_addr,
+                    "to": [recipient],
+                    "subject": subject,
+                    "html": html_body,
+                    "text": text_body,
+                },
+                timeout=5,
+            )
+            if resp.status_code in (200, 201):
+                logger.info("magic-link email sent via Resend to %s", recipient)
+                return
+            logger.warning(
+                "Resend magic-link delivery non-2xx: %s %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+        except Exception:
+            logger.debug(
+                "Resend magic-link delivery failed, trying SMTP", exc_info=True
+            )
+
+    # SMTP fallback
+    smtp_host = os.environ.get("SIC_SMTP_HOST")
+    if not smtp_host:
+        logger.debug(
+            "SIC_SMTP_HOST not set — SMTP magic-link fallback unavailable for %s",
+            recipient,
+        )
+        return
+
+    try:
+        smtp_port = int(os.environ.get("SIC_SMTP_PORT", "587"))
+        smtp_user = os.environ.get("SIC_SMTP_USER", "")
+        smtp_pass = os.environ.get("SIC_SMTP_PASS", "")
+
+        msg = email.mime.multipart.MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = recipient
+        msg.attach(email.mime.text.MIMEText(text_body, "plain"))
+        msg.attach(email.mime.text.MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls()
+            if smtp_user:
+                server.login(smtp_user, smtp_pass)
+            server.sendmail(from_addr, [recipient], msg.as_string())
+
+        logger.info("magic-link email sent via SMTP to %s", recipient)
+    except Exception:
+        logger.debug(
+            "SMTP magic-link delivery failed for %s", recipient, exc_info=True
+        )
+
+
 def _fire_email(event: str, details: dict[str, Any]) -> None:
     """Send a transactional email alert (runs in a daemon thread).
 
@@ -364,6 +470,20 @@ def send_scan_alert(event: str, details: dict[str, Any] | None = None) -> None:
                  Special key ``description`` becomes the Discord embed description.
     """
     payload = dict(details) if details else {}
+
+    # Magic-link delivery — always fires in a daemon thread; never blocks auth flow
+    if event == _MAGIC_LINK_EVENT:
+        try:
+            t = threading.Thread(
+                target=_fire_magic_link_email, args=(dict(payload),), daemon=True
+            )
+            t.start()
+        except Exception:
+            logger.debug(
+                "Failed to dispatch magic-link email thread", exc_info=True
+            )
+        # No other channels (Discord/Slack) for magic-link events — return early
+        return
 
     # Deduplication for alert-worthy events
     if event in _EMAIL_EVENTS:

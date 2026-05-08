@@ -110,8 +110,26 @@ app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get("SIC_MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
+
+def _get_real_ip() -> str:
+    """Return the real client IP, preferring X-Forwarded-For over REMOTE_ADDR.
+
+    CF Workers (and other reverse proxies) forward the originating IP via
+    X-Forwarded-For.  Taking only the *first* entry (left-most) is correct when
+    the proxy is trusted — it is the IP the client presented to CF.
+    """
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        # XFF may be a comma-separated list; the leftmost is the real client IP
+        real_ip = xff.split(",")[0].strip()
+        if real_ip:
+            return real_ip
+    return get_remote_address() or "127.0.0.1"
+
+
 limiter = Limiter(
-    get_remote_address,
+    _get_real_ip,
     app=app,
     default_limits=["200 per minute"],
     storage_uri="memory://",
